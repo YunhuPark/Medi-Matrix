@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AppStatus = 'IDLE' | 'PROCESSING' | 'RENDERED' | 'SENT';
+export type AppStatus = 'IDLE' | 'PROCESSING' | 'RENDERED' | 'STREAMING' | 'SENT';
 
 interface ViewerState {
   opacity: number;

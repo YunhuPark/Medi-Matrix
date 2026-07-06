@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, MapPin, PhoneCall, CheckCircle, X, ShieldAlert } from 'lucide-react';
+
+import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
 
 interface EmergencyDashboardProps {
   onClose: () => void;

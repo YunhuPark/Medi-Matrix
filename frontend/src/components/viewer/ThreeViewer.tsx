@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { useViewerStore } from '../../store/useViewerStore';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -13,7 +13,7 @@ interface ModelSceneProps {
 }
 
 function ModelScene({ loadedGroup }: ModelSceneProps) {
-  const { camera, gl } = useThree();
+  const { camera } = useThree();
   const opacity = useViewerStore((state) => state.opacity);
   const groupRef = useRef<THREE.Group>(null!);
   const placeholderRef = useRef<THREE.Mesh>(null!);
