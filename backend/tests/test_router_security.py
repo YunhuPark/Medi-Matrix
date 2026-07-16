@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 import numpy as np
 import io
 import os
+import httpx
 from unittest.mock import patch, MagicMock
 from main import app
 
@@ -72,7 +73,7 @@ def test_reject_object_dtype():
     )
     assert response.status_code == 400
     # ensure no internal path leakage
-    assert "Invalid .npy file" in response.text
+    assert "Invalid NumPy medical data" in response.text
     assert "/" not in response.json()["detail"] and "\\" not in response.json()["detail"]
 
 def test_reject_non_3d_array(mock_supabase):
@@ -83,7 +84,7 @@ def test_reject_non_3d_array(mock_supabase):
         files={"file": ("test.npy", file_bytes, "application/octet-stream")},
     )
     assert response.status_code == 400
-    assert "3-dimensional" in response.text
+    assert "three-dimensional" in response.text
     mock_supabase.assert_not_called()
 
 def test_reject_nan_infinity():
@@ -95,7 +96,7 @@ def test_reject_nan_infinity():
         files={"file": ("test.npy", file_bytes, "application/octet-stream")},
     )
     assert response.status_code == 400
-    assert "NaN or Infinity" in response.text
+    assert "non-finite values" in response.text
 
 def test_reject_empty_file():
     response = client.post(
@@ -150,3 +151,66 @@ def test_triage_webhook_failure_handling():
         )
         assert response.status_code == 400
         assert "password incorrect" not in response.text # Don't leak external server error details
+
+def test_reject_empty_filename():
+    response = client.post(
+        "/api/v1/process-mri",
+        files={"file": ("", b"fake-data", "application/octet-stream")},
+        data={"modality": "Brain"}
+    )
+    assert response.status_code in [400, 422]
+
+@patch.dict(os.environ, {"MAX_VITALS_UPLOAD_SIZE": "1024"})
+def test_vitals_reject_large_file():
+    large_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n" + (b"80,120,80,16,36.5,98\n" * 100)
+    response = client.post(
+        "/api/v1/upload-vitals",
+        files={"file": ("test.csv", large_csv, "text/csv")},
+    )
+    assert response.status_code == 413
+    assert "File too large" in response.text
+
+def test_vitals_reject_invalid_headers():
+    bad_csv = b"wrong_header1,wrong_header2\n10,20"
+    response = client.post(
+        "/api/v1/upload-vitals",
+        files={"file": ("test.csv", bad_csv, "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "Missing required CSV headers" in response.text
+
+def test_vitals_reject_nan():
+    bad_csv = b"hr,bpSys,bpDia,resp,temp,spo2\nNaN,120,80,16,36.5,98\n"
+    response = client.post(
+        "/api/v1/upload-vitals",
+        files={"file": ("test.csv", bad_csv, "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "Invalid numeric data" in response.text
+
+def test_nii_temp_file_suffix(mock_inference, mock_mesh_processor, mock_supabase):
+    mock_inference.return_value = (np.ones((10, 10, 10)), np.ones((10, 10, 10)))
+    with patch("tempfile.NamedTemporaryFile") as mock_temp:
+        mock_temp_instance = MagicMock()
+        mock_temp_instance.name = "/tmp/mock.nii.gz"
+        mock_temp.return_value.__enter__.return_value = mock_temp_instance
+
+        client.post(
+            "/api/v1/process-mri",
+            files={"file": ("test.nii", b"fake", "application/octet-stream")},
+            data={"modality": "Brain"}
+        )
+        # Should use .nii suffix since input was .nii
+        mock_temp.assert_called_with(suffix=".nii", delete=False)
+
+def test_triage_connection_failure():
+    with patch("httpx.AsyncClient.post") as mock_post:
+        mock_post.side_effect = httpx.ConnectError("Connection refused")
+        
+        response = client.post(
+            "/api/v1/triage/send",
+            json={"patient_id": "123", "modality": "Brain", "volume": 100.0}
+        )
+        assert response.status_code == 503
+        assert "Triage service is currently unavailable" in response.text
+        assert "Connection refused" not in response.text

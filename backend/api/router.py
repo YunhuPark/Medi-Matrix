@@ -16,6 +16,20 @@ from services.mamba_service import mamba_simulator
 
 router = APIRouter()
 
+async def read_file_with_limit(file: UploadFile, max_size: int) -> bytes:
+    contents = bytearray()
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        contents.extend(chunk)
+        if len(contents) > max_size:
+            raise HTTPException(status_code=413, detail="File too large")
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file is not allowed.")
+    return bytes(contents)
+
 from pydantic import BaseModel
 
 class TriageRequest(BaseModel):
@@ -47,25 +61,89 @@ async def trigger_triage_webhook(req: TriageRequest):
             return triage_data
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         # Triage 서버가 꺼져 있을 경우 프론트에서 처리할 수 있도록 에러 반환
-        raise HTTPException(status_code=503, detail=f"Failed to contact Triage server: {str(e)}")
+        raise HTTPException(status_code=503, detail="Triage service is currently unavailable.")
 
 @router.post("/upload-vitals")
 async def upload_vitals(file: UploadFile = File(...)):
     """
     실제 환자의 생체 신호(Vitals) 시계열 데이터를 CSV 포맷으로 업로드합니다.
     """
-    if not file.filename.endswith('.csv'):
-        return JSONResponse(status_code=400, content={"error": "Only CSV files are allowed."})
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Empty filename.")
+    if not filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
+
+    try:
+        try:
+            max_size_str = os.environ.get("MAX_VITALS_UPLOAD_SIZE", "5242880")
+            max_size = int(max_size_str)
+            if max_size <= 0: max_size = 5242880
+        except ValueError:
+            max_size = 5242880
+
+        contents = await read_file_with_limit(file, max_size)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    try:
+        content_str = contents.decode('utf-8')
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV file must be UTF-8 encoded.")
+
+    import csv
+    import math
+    reader = csv.DictReader(io.StringIO(content_str))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV file is empty or missing headers.")
+    
+    required_headers = {'hr', 'bpSys', 'bpDia', 'resp', 'temp', 'spo2'}
+    if not required_headers.issubset(set(reader.fieldnames)):
+        raise HTTPException(status_code=400, detail="Missing required CSV headers.")
+
+    row_count = 0
+    valid_rows = []
+    for row in reader:
+        row_count += 1
+        if row_count > 10000:
+            raise HTTPException(status_code=400, detail="CSV contains too many rows.")
+        for header in required_headers:
+            val_str = row.get(header, "")
+            if not val_str.strip():
+                raise HTTPException(status_code=400, detail=f"Empty value found for {header}.")
+            try:
+                val = float(val_str)
+                if not math.isfinite(val):
+                    raise ValueError()
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid numeric data for {header}.")
+        valid_rows.append(row)
+
+    if not valid_rows:
+        raise HTTPException(status_code=400, detail="CSV file has no data rows.")
 
     file_path = os.path.join(os.path.dirname(__file__), "../data/real_vitals.csv")
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", delete=False, newline="", encoding="utf-8") as tmp:
+        writer = csv.DictWriter(tmp, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        writer.writerows(valid_rows)
+        tmp_name = tmp.name
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        shutil.move(tmp_name, file_path)
+    except Exception:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
+        raise HTTPException(status_code=500, detail="Failed to save vitals data.")
 
-    return {"message": "Vitals CSV uploaded successfully", "filename": file.filename}
+    return {"message": "Vitals CSV uploaded successfully", "filename": filename}
 
 @router.websocket("/triage/stream")
 async def triage_websocket_stream(websocket: WebSocket):
@@ -92,12 +170,12 @@ async def triage_websocket_stream(websocket: WebSocket):
         try:
             from .mamba_inference import MambaSystemicPredictor
             mamba_predictor = MambaSystemicPredictor()
-        except FileNotFoundError as e:
-            await websocket.send_json({"status": "error", "message": str(e)})
-            await websocket.close()
-            return
-        except Exception as e:
-            await websocket.send_json({"status": "error", "message": f"Mamba 모델 초기화 실패: {str(e)}"})
+        except Exception:
+            await websocket.send_json({
+                "status": "error",
+                "code": "MODEL_UNAVAILABLE",
+                "message": "Prediction model is currently unavailable."
+            })
             await websocket.close()
             return
 
@@ -173,8 +251,8 @@ async def triage_websocket_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print("[WebSocket] Client disconnected from streaming.")
-    except Exception as e:
-        print(f"[WebSocket] Error during streaming: {e}")
+    except Exception:
+        print("[WebSocket] Error during streaming.")
 
 
 import nibabel as nib
@@ -195,19 +273,23 @@ async def process_medical_mri(
     추론된 분할 마스크(Segmentation Mask)를 바탕으로 GLB 메쉬를 생성하고,
     Supabase에 업로드하여 Public URL을 반환합니다.
     """
-    file_ext = file.filename.lower()
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Empty filename.")
+    file_ext = filename.lower()
     valid_extensions = ('.nii', '.nii.gz', '.npy')
     if not any(file_ext.endswith(ext) for ext in valid_extensions):
         raise HTTPException(status_code=400, detail="Only .nii.gz or .npy files are supported.")
 
     try:
-        contents = await file.read()
-        if not contents:
-            raise HTTPException(status_code=400, detail="Empty file is not allowed.")
+        try:
+            max_size_str = os.environ.get("MAX_UPLOAD_SIZE", "52428800")
+            max_size = int(max_size_str)
+            if max_size <= 0: max_size = 52428800
+        except ValueError:
+            max_size = 52428800
 
-        max_size = int(os.environ.get("MAX_UPLOAD_SIZE", 50 * 1024 * 1024))
-        if len(contents) > max_size:
-            raise HTTPException(status_code=413, detail="File too large")
+        contents = await read_file_with_limit(file, max_size)
 
         tmp_path = None
         glb_file_path = None
@@ -215,7 +297,8 @@ async def process_medical_mri(
             # 1. 원본 데이터 파싱 및 AI 모델 추론 (Inference)
             if file_ext.endswith('.nii') or file_ext.endswith('.nii.gz'):
                 # nibabel과 Inference 서비스는 파일 경로가 필요하므로 임시 파일로 저장
-                with tempfile.NamedTemporaryFile(suffix=".nii.gz", delete=False) as tmp:
+                suffix = ".nii.gz" if file_ext.endswith(".nii.gz") else ".nii"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                     tmp.write(contents)
                     tmp_path = tmp.name
 
@@ -230,15 +313,15 @@ async def process_medical_mri(
                 mask_data = np.load(io.BytesIO(contents), allow_pickle=False)
 
                 if mask_data.dtype.hasobject:
-                    raise ValueError("Invalid .npy file")
+                    raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
                 if mask_data.ndim != 3:
-                    raise ValueError("Mask must be a 3-dimensional array.")
+                    raise HTTPException(status_code=400, detail="Medical array must be three-dimensional.")
                 if not (np.issubdtype(mask_data.dtype, np.number) or np.issubdtype(mask_data.dtype, np.bool_)):
-                    raise ValueError("Mask dtype must be numeric or boolean.")
+                    raise HTTPException(status_code=400, detail="Medical array dtype is not supported.")
                 if mask_data.size > 256 * 256 * 256:
-                    raise ValueError("Mask shape is too large.")
+                    raise HTTPException(status_code=400, detail="Medical array dimensions exceed the allowed limit.")
                 if not np.isfinite(mask_data).all():
-                    raise ValueError("Mask contains NaN or Infinity.")
+                    raise HTTPException(status_code=400, detail="Medical array contains non-finite values.")
 
                 heatmap_data = mask_data # Fallback
 
@@ -293,12 +376,8 @@ async def process_medical_mri(
 
     except HTTPException:
         raise
-    except ValueError as e:
-        print(f"[Router] [ERROR] ValueError: {str(e)}")
-        error_msg = str(e)
-        if "Object arrays cannot be loaded" in error_msg:
-            error_msg = "Invalid .npy file: Object arrays are not allowed."
-        raise HTTPException(status_code=400, detail=error_msg)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
     except Exception as e:
         import traceback
         traceback.print_exc()
