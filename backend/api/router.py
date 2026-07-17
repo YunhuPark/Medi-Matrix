@@ -1,5 +1,4 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Form, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 import numpy as np
 import os
 import io
@@ -23,9 +22,9 @@ async def read_file_with_limit(file: UploadFile, max_size: int) -> bytes:
         chunk = await file.read(chunk_size)
         if not chunk:
             break
-        contents.extend(chunk)
-        if len(contents) > max_size:
+        if len(contents) + len(chunk) > max_size:
             raise HTTPException(status_code=413, detail="File too large")
+        contents.extend(chunk)
     if not contents:
         raise HTTPException(status_code=400, detail="Empty file is not allowed.")
     return bytes(contents)
@@ -54,7 +53,7 @@ async def trigger_triage_webhook(req: TriageRequest):
         async with httpx.AsyncClient() as client:
             response = await client.post(triage_api_url, json=payload, timeout=5.0)
             if response.status_code >= 400:
-                raise HTTPException(status_code=400, detail="Triage server error")
+                raise HTTPException(status_code=502, detail="Triage server error")
 
             # Triage 서버의 응답(sepsis_probability 등)을 그대로 프론트에 전달
             triage_data = response.json()
@@ -84,6 +83,13 @@ async def upload_vitals(file: UploadFile = File(...)):
         except ValueError:
             max_size = 5242880
 
+        try:
+            max_rows_str = os.environ.get("MAX_VITALS_ROWS", "1000")
+            max_rows = int(max_rows_str)
+            if max_rows <= 0: max_rows = 1000
+        except ValueError:
+            max_rows = 1000
+
         contents = await read_file_with_limit(file, max_size)
     except HTTPException:
         raise
@@ -109,7 +115,7 @@ async def upload_vitals(file: UploadFile = File(...)):
     valid_rows = []
     for row in reader:
         row_count += 1
-        if row_count > 10000:
+        if row_count > max_rows:
             raise HTTPException(status_code=400, detail="CSV contains too many rows.")
         for header in required_headers:
             val_str = row.get(header, "")
@@ -127,23 +133,28 @@ async def upload_vitals(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="CSV file has no data rows.")
 
     file_path = os.path.join(os.path.dirname(__file__), "../data/real_vitals.csv")
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    dir_name = os.path.dirname(file_path)
+    os.makedirs(dir_name, exist_ok=True)
     
     import tempfile
-    with tempfile.NamedTemporaryFile("w", delete=False, newline="", encoding="utf-8") as tmp:
+    with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, newline="", encoding="utf-8") as tmp:
         writer = csv.DictWriter(tmp, fieldnames=reader.fieldnames)
         writer.writeheader()
         writer.writerows(valid_rows)
         tmp_name = tmp.name
 
     try:
-        shutil.move(tmp_name, file_path)
+        os.replace(tmp_name, file_path)
     except Exception:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
         raise HTTPException(status_code=500, detail="Failed to save vitals data.")
+    finally:
+        if os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except Exception:
+                print("[Cleanup Error] Failed to remove temporary vitals file.")
 
-    return {"message": "Vitals CSV uploaded successfully", "filename": filename}
+    return {"message": "Vitals CSV uploaded successfully"}
 
 @router.websocket("/triage/stream")
 async def triage_websocket_stream(websocket: WebSocket):
@@ -255,11 +266,8 @@ async def triage_websocket_stream(websocket: WebSocket):
         print("[WebSocket] Error during streaming.")
 
 
-import nibabel as nib
 import tempfile
 from services.inference_service import inference_service
-
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 
 @router.post("/process-mri")
 async def process_medical_mri(
@@ -302,7 +310,7 @@ async def process_medical_mri(
                     tmp.write(contents)
                     tmp_path = tmp.name
 
-                print(f"[Router] Received Raw MRI: {file.filename}. Sending to AI Inference Service...")
+                print("[Router] Received Raw MRI. Sending to AI Inference Service...")
 
                 # --- [핵심] PyTorch 3D UNet 추론 파이프라인 ---
                 mask_data, heatmap_data = inference_service.predict(tmp_path)
@@ -352,7 +360,7 @@ async def process_medical_mri(
                 destination_path=unique_filename
             )
 
-            print(f"[Router] [OK] Success -> URL: {public_url[:80]}...")
+            print("[Router] [OK] Success -> Mesh generated and uploaded.")
 
             return {
                 "status": "success",
@@ -366,19 +374,17 @@ async def process_medical_mri(
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
-                except Exception as cleanup_err:
-                    print(f"[Cleanup Error] Failed to remove tmp_path: {cleanup_err}")
+                except Exception:
+                    print("[Cleanup Error] Failed to remove temporary file.")
             if glb_file_path and os.path.exists(glb_file_path):
                 try:
                     os.remove(glb_file_path)
-                except Exception as cleanup_err:
-                    print(f"[Cleanup Error] Failed to remove glb_file_path: {cleanup_err}")
+                except Exception:
+                    print("[Cleanup Error] Failed to remove temporary mesh file.")
 
     except HTTPException:
         raise
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")

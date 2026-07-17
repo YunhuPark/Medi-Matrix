@@ -149,7 +149,7 @@ def test_triage_webhook_failure_handling():
             "/api/v1/triage/send",
             json={"patient_id": "123", "modality": "Brain", "volume": 100.0}
         )
-        assert response.status_code == 400
+        assert response.status_code == 502
         assert "password incorrect" not in response.text # Don't leak external server error details
 
 def test_reject_empty_filename():
@@ -214,3 +214,63 @@ def test_triage_connection_failure():
         assert response.status_code == 503
         assert "Triage service is currently unavailable" in response.text
         assert "Connection refused" not in response.text
+
+@patch.dict(os.environ, {"MAX_VITALS_ROWS": "invalid", "MAX_VITALS_UPLOAD_SIZE": "-100"})
+def test_invalid_env_vars_fallback():
+    # If MAX_VITALS_ROWS is 'invalid' and size is '-100', they should fallback to 1000 and 5242880
+    valid_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98\n"
+    response = client.post(
+        "/api/v1/upload-vitals",
+        files={"file": ("test.csv", valid_csv, "text/csv")},
+    )
+    assert response.status_code == 200
+
+def test_vitals_reject_too_many_rows():
+    # Max rows is 1000 by default
+    large_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n" + (b"80,120,80,16,36.5,98\n" * 1001)
+    response = client.post(
+        "/api/v1/upload-vitals",
+        files={"file": ("test.csv", large_csv, "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "too many rows" in response.text
+
+def test_vitals_atomic_replace_and_cleanup():
+    valid_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98\n"
+    with patch("os.replace") as mock_replace:
+        response = client.post(
+            "/api/v1/upload-vitals",
+            files={"file": ("test.csv", valid_csv, "text/csv")},
+        )
+        assert response.status_code == 200
+        mock_replace.assert_called_once()
+        args = mock_replace.call_args[0]
+        # temp_name, target_path
+        assert "real_vitals.csv" in args[1]
+        assert "filename" not in response.json()  # Filename should not be returned
+
+def test_vitals_save_failure_cleanup():
+    valid_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98\n"
+    with patch("os.replace", side_effect=Exception("Disk full")):
+        with patch("os.remove") as mock_remove:
+            response = client.post(
+                "/api/v1/upload-vitals",
+                files={"file": ("test.csv", valid_csv, "text/csv")},
+            )
+            assert response.status_code == 500
+            assert "Failed to save vitals data" in response.text
+            assert "Disk full" not in response.text
+            mock_remove.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_websocket_model_unavailable():
+    # Attempt to connect to websocket with bad model
+    with patch("api.router.os.path.exists", return_value=True):
+        with patch("api.router.open", return_value=io.StringIO("hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98")):
+            with patch("api.mamba_inference.MambaSystemicPredictor", side_effect=Exception("Model weights missing")):
+                with client.websocket_connect("/api/v1/triage/stream") as websocket:
+                    websocket.send_text('{"patient_id": "123", "volume": 100}')
+                    data = websocket.receive_json()
+                    assert data["status"] == "error"
+                    assert data["code"] == "MODEL_UNAVAILABLE"
+                    assert "Model weights missing" not in data["message"]
