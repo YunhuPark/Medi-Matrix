@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@supabase/supabase-js": "^2.110.7",
     "@tanstack/react-query": "^5.101.2",
     "@types/three": "^0.185.0",
     "axios": "^1.18.1",

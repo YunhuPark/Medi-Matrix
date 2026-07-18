@@ -6,9 +6,11 @@ import { Upload, Brain, Activity, Loader2, Stethoscope, Wifi, WifiOff } from 'lu
 import { Toaster, toast } from 'sonner'
 import { processMedicalMask } from './api/medicalApi'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
+import { AuthProvider, useAuth } from './auth/AuthProvider'
+import { AuthPage } from './components/auth/AuthPage'
 import './App.css'
 
-function App() {
+function MainApp() {
   const { 
     opacity, setOpacity, 
     modality, setModality,
@@ -17,6 +19,8 @@ function App() {
     lesionVolume, setLesionVolume,
     appStatus, setAppStatus,
   } = useViewerStore()
+  
+  const { session, signOut } = useAuth()
   
   const [triageLevel, setTriageLevel] = useState<string | null>(null)
   
@@ -137,8 +141,10 @@ function App() {
         setAppStatus('STREAMING')
         toast.success("실제 환자 데이터 스트리밍(Replay)이 시작되었습니다.")
         
-        // 백엔드에 스트리밍 시작 트리거 1회 전송
+        // 백엔드에 인증 토큰 및 스트리밍 시작 트리거 전송
         ws.send(JSON.stringify({
+          type: "auth",
+          access_token: session?.access_token,
           patient_id: patientId,
           volume: lesionVolume
         }))
@@ -271,6 +277,14 @@ function App() {
             }}
           >
             <Stethoscope size={18} /> Lung
+          </button>
+          
+          <button 
+            className="tab"
+            style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }}
+            onClick={signOut}
+          >
+            로그아웃
           </button>
         </div>
       </header>
@@ -466,6 +480,28 @@ function App() {
       )}
     </div>
   )
+}
+
+function AppContent() {
+  const { session, loading } = useAuth();
+  
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'white', backgroundColor: '#111827' }}>로딩 중...</div>;
+  }
+  
+  if (!session) {
+    return <AuthPage />;
+  }
+  
+  return <MainApp />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App

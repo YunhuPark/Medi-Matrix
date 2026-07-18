@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Form, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Form, WebSocket, WebSocketDisconnect, Depends, Request
 import numpy as np
 import os
 import io
@@ -10,8 +10,10 @@ import shutil
 
 # 내부 서비스 모듈 임포트
 from services.mesh_processor import create_mesh_from_mask
-from services.supabase_client import upload_file_to_supabase
+from services.supabase_client import upload_file_to_supabase, get_supabase_client
 from services.mamba_service import mamba_simulator
+from core.auth import get_current_user, CurrentUser
+from core.rate_limit import check_rate_limit, process_mri_limiter, upload_vitals_limiter, triage_send_limiter, signed_url_limiter, websocket_limiter
 
 router = APIRouter()
 
@@ -37,10 +39,15 @@ class TriageRequest(BaseModel):
     volume: float = 0.0
 
 @router.post("/triage/send")
-async def trigger_triage_webhook(req: TriageRequest):
+async def trigger_triage_webhook(
+    req: TriageRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     On-Demand로 Triage 외부 서버에 웹훅을 전송합니다. (구버전 - 하위 호환 유지)
     """
+    check_rate_limit(request, triage_send_limiter, current_user.user_id)
     triage_api_url = os.environ.get("TRIAGE_API_URL", "http://localhost:8001/api/triage/webhook")
 
     payload = {
@@ -65,10 +72,15 @@ async def trigger_triage_webhook(req: TriageRequest):
         raise HTTPException(status_code=503, detail="Triage service is currently unavailable.")
 
 @router.post("/upload-vitals")
-async def upload_vitals(file: UploadFile = File(...)):
+async def upload_vitals(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     실제 환자의 생체 신호(Vitals) 시계열 데이터를 CSV 포맷으로 업로드합니다.
     """
+    check_rate_limit(request, upload_vitals_limiter, current_user.user_id)
     filename = (file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Empty filename.")
@@ -132,7 +144,7 @@ async def upload_vitals(file: UploadFile = File(...)):
     if not valid_rows:
         raise HTTPException(status_code=400, detail="CSV file has no data rows.")
 
-    file_path = os.path.join(os.path.dirname(__file__), "../data/real_vitals.csv")
+    file_path = os.path.join(os.path.dirname(__file__), f"../data/users/{current_user.user_id}/vitals.csv")
     dir_name = os.path.dirname(file_path)
     os.makedirs(dir_name, exist_ok=True)
     
@@ -163,15 +175,72 @@ async def triage_websocket_stream(websocket: WebSocket):
     """
     await websocket.accept()
     try:
-        # 클라이언트로부터 초기 1회 트리거 수신 (환자 ID, Volume)
-        data = await websocket.receive_text()
-        payload = json.loads(data)
+        # Rate limit based on IP first
+        client_ip = websocket.client.host if websocket.client else "unknown"
+        if not websocket_limiter.is_allowed(client_ip):
+            await websocket.close(code=4429)
+            return
+            
+        allowed_origins = os.environ.get("ALLOWED_ORIGINS", "")
+        origin = websocket.headers.get("origin")
+        if allowed_origins and origin not in allowed_origins.split(","):
+            await websocket.close(code=4401)
+            return
+            
+        # 클라이언트로부터 초기 1회 트리거 수신 (인증 및 환자 ID)
+        try:
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            payload = json.loads(data)
+        except asyncio.TimeoutError:
+            await websocket.close(code=4401)
+            return
+        except Exception:
+            await websocket.close(code=4401)
+            return
+            
+        if payload.get("type") != "auth" or not payload.get("access_token"):
+            await websocket.close(code=4401)
+            return
+            
+        token = payload["access_token"]
+        
+        # Verify Token manually
+        supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        publishable_key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+        if not supabase_url or not publishable_key:
+            await websocket.close(code=4401)
+            return
+            
+        auth_url = f"{supabase_url}/auth/v1/user"
+        headers = {"apikey": publishable_key, "Authorization": f"Bearer {token}"}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(auth_url, headers=headers, timeout=3.0)
+        except Exception:
+            await websocket.close(code=4401)
+            return
+            
+        if response.status_code != 200:
+            await websocket.close(code=4401)
+            return
+            
+        user_data = response.json()
+        user_id = user_data.get("id")
+        if not user_id:
+            await websocket.close(code=4401)
+            return
+        try:
+            valid_uuid = str(uuid.UUID(user_id))
+        except Exception:
+            await websocket.close(code=4401)
+            return
 
         patient_id = payload.get("patient_id", "unknown")
         volume = float(payload.get("volume", 0))
 
         import csv
-        csv_path = os.path.join(os.path.dirname(__file__), "../data/real_vitals.csv")
+        csv_path = os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv")
 
         if not os.path.exists(csv_path):
             await websocket.send_json({"status": "error", "message": "실제 환자 CSV 데이터가 업로드되지 않았습니다."})
@@ -271,16 +340,19 @@ from services.inference_service import inference_service
 
 @router.post("/process-mri")
 async def process_medical_mri(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    modality: str = Form("Brain")
+    modality: str = Form("Brain"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     [AI Inference Pipeline]
     업로드된 원본 환자 의료 영상(.nii, .nii.gz)을 받아 PyTorch 3D UNet 모델을 통과시킵니다.
     추론된 분할 마스크(Segmentation Mask)를 바탕으로 GLB 메쉬를 생성하고,
-    Supabase에 업로드하여 Public URL을 반환합니다.
+    Supabase에 업로드하여 Signed URL을 반환합니다.
     """
+    check_rate_limit(request, process_mri_limiter, current_user.user_id)
     filename = (file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Empty filename.")
@@ -348,28 +420,33 @@ async def process_medical_mri(
 
             # 4. Supabase Storage 업로드
             # 고유한 파일명 생성 (예: uuid)
-            unique_filename = f"{modality.lower()}_mesh_{uuid.uuid4().hex}.glb"
+            mesh_uuid = str(uuid.uuid4())
+            bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "medical-meshes")
+            destination_path = f"{current_user.user_id}/{mesh_uuid}.glb"
 
-            # 버킷명 (실제 생성한 버킷명으로 변경 필요)
-            bucket_name = "medical-meshes"
-
-            # Supabase 업로드 및 URL 획득
-            public_url = upload_file_to_supabase(
+            # Supabase 업로드 및 Signed URL 획득
+            signed_url = upload_file_to_supabase(
                 bucket_name=bucket_name,
                 file_path=glb_file_path,
-                destination_path=unique_filename
+                destination_path=destination_path,
+                expires_in=600
             )
 
             print("[Router] [OK] Success -> Mesh generated and uploaded.")
-
-            return {
-                "status": "success",
-                "message": "Mesh generated and uploaded successfully.",
-                "glb_url": public_url,
-                "filename": unique_filename,
-                "patient_id": mock_patient_id,
-                "lesion_volume": lesion_volume
-            }
+            
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                content={
+                    "status": "success",
+                    "message": "Mesh generated and uploaded successfully.",
+                    "mesh_id": mesh_uuid,
+                    "glb_url": signed_url,
+                    "expires_in": 600,
+                    "patient_id": mock_patient_id,
+                    "lesion_volume": lesion_volume
+                },
+                headers={"Cache-Control": "no-store"}
+            )
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
@@ -388,3 +465,46 @@ async def process_medical_mri(
         raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+from fastapi.responses import JSONResponse
+
+@router.get("/meshes/{mesh_id}/signed-url")
+async def get_signed_url(
+    mesh_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    check_rate_limit(request, signed_url_limiter, current_user.user_id)
+    
+    try:
+        valid_mesh_id = str(uuid.UUID(mesh_id))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid mesh_id")
+        
+    bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "medical-meshes")
+    destination_path = f"{current_user.user_id}/{valid_mesh_id}.glb"
+    
+    expires_in = int(os.environ.get("SIGNED_URL_EXPIRES_IN", "600"))
+    
+    try:
+        supabase = get_supabase_client()
+        response = supabase.storage.from_(bucket_name).create_signed_url(destination_path, expires_in)
+        signed_url = response.get("signedURL") if isinstance(response, dict) else getattr(response, "signedURL", None)
+        if not signed_url and isinstance(response, dict) and "signedUrl" in response:
+            signed_url = response["signedUrl"]
+            
+        if not signed_url:
+            raise HTTPException(status_code=404, detail="File not found or failed to create signed URL.")
+            
+        return JSONResponse(
+            content={
+                "mesh_id": valid_mesh_id,
+                "signed_url": signed_url,
+                "expires_at": expires_in
+            },
+            headers={"Cache-Control": "no-store"}
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Storage service error.")

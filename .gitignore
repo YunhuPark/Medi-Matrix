@@ -23,3 +23,4 @@ coverage/
 *.glb
 backend/data/real_vitals.csv
 backend/data/uploads/
+backend/data/users/
