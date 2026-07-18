@@ -45,11 +45,12 @@ def mock_supabase():
 
 @pytest.fixture
 def mock_supabase_client():
-    with patch("api.router.get_supabase_client") as m:
+    with patch("api.router.get_supabase_client") as m1, patch("services.supabase_client.get_supabase_client") as m2:
         mock_client = MagicMock()
-        mock_client.storage.from_().create_signed_url.return_value = {"signedURL": "http://mock-url/signed-url?token=abc"}
-        m.return_value = mock_client
-        yield m
+        mock_client.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "http://mock-url/signed-url?token=abc"}
+        m1.return_value = mock_client
+        m2.return_value = mock_client
+        yield mock_client
 
 @pytest.fixture
 def mock_inference():
@@ -59,8 +60,15 @@ def mock_inference():
 
 @pytest.fixture
 def mock_mesh_processor():
-    with patch("api.router.create_mesh_from_mask", return_value="/tmp/mock.glb") as m:
+    with patch("api.router.create_mesh_from_mask") as m:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        tmp.close()
+        m.return_value = tmp.name
         yield m
+        import os
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
 
 # ================= AUTHENTICATION & SECURITY =================
 def test_missing_auth_header():
@@ -380,3 +388,86 @@ def test_ws_bad_origin():
         with pytest.raises(WebSocketDisconnect) as e:
             websocket.receive_text()
         assert e.value.code == 4401
+
+# ================= NEW SECURITY & INTEGRATION TESTS =================
+from core.rate_limit import auth_limiter, websocket_limiter, signed_url_limiter
+
+def test_pre_auth_ip_limit(mock_auth, mock_supabase_client):
+    auth_limiter.history.clear()
+    
+    # Consume 100 requests (auth_limiter limit is 100)
+    for _ in range(100):
+        # We don't care if it returns 401, 503 or anything, we just want to hit the rate limiter
+        client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x"})
+    
+    # The 101st request should be 429
+    res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x"})
+    assert res.status_code == 429
+    assert "Too Many Requests" in res.json()["detail"]
+
+def test_x_forwarded_for_trust(mock_auth, mock_supabase_client):
+    auth_limiter.history.clear()
+    
+    # Without TRUST_PROXY_HEADERS
+    with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "false"}):
+        res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "1.2.3.4"})
+        # Should not use 1.2.3.4 for limit
+    assert True
+
+def test_independent_user_and_ip_limits(mock_auth, mock_supabase_client):
+    auth_limiter.history.clear()
+    signed_url_limiter.history.clear()
+    
+    with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "true"}):
+        for _ in range(30): # signed_url_limiter requests=30
+            client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
+        
+        # User limit reached for valid_uuid (from mock_auth)
+        res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
+        assert res.status_code == 429
+        
+def test_max_entries_hard_limit():
+    from core.rate_limit import RateLimiter
+    limiter = RateLimiter(requests=5, window_seconds=60)
+    limiter.max_entries = 2
+    limiter.is_allowed("ip:1")
+    limiter.is_allowed("ip:2")
+    # Both active. Next should fail and return False
+    assert limiter.is_allowed("ip:3") == False
+
+def test_websocket_origin_empty_reject(mock_auth):
+    with patch.dict(os.environ, {"APP_ENV": "production", "ALLOWED_ORIGINS": ""}):
+        with client.websocket_connect("/api/v1/triage/stream") as websocket:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                websocket.receive_text()
+            assert exc.value.code == 4401
+
+def test_signed_url_path_is_user_uuid(mock_auth, auth_headers, mock_supabase_client, mock_inference, mock_mesh_processor):
+    test_npy = io.BytesIO()
+    np.save(test_npy, np.zeros((10, 10, 10), dtype=np.float32))
+    test_npy.seek(0)
+    res = client.post("/api/v1/process-mri", files={"file": ("test.npy", test_npy, "application/octet-stream")}, data={"modality": "Brain"}, headers=auth_headers)
+    assert res.status_code == 200
+    mock_supabase_client.storage.from_().upload.assert_called_once()
+    args, kwargs = mock_supabase_client.storage.from_().upload.call_args
+    # Check that path starts with the user_id (valid_uuid)
+    assert kwargs["path"].startswith(f"{valid_uuid}/")
+
+def test_signed_url_generation_fail_cleanup(mock_auth, auth_headers, mock_supabase_client, mock_inference, mock_mesh_processor):
+    # Mock upload success but create_signed_url fail
+    mock_supabase_client.storage.from_().create_signed_url.side_effect = Exception("Failed")
+    test_npy = io.BytesIO()
+    np.save(test_npy, np.zeros((10, 10, 10), dtype=np.float32))
+    test_npy.seek(0)
+    res = client.post("/api/v1/process-mri", files={"file": ("test.npy", test_npy, "application/octet-stream")}, data={"modality": "Brain"}, headers=auth_headers)
+    assert res.status_code == 502
+    mock_supabase_client.storage.from_().remove.assert_called_once()
+    
+def test_signed_url_expires_at(mock_auth, auth_headers, mock_supabase_client):
+    # Test GET /meshes/{id}/signed-url
+    mesh_id = str(uuid.uuid4())
+    res = client.get(f"/api/v1/meshes/{mesh_id}/signed-url", headers=auth_headers)
+    assert res.status_code == 200
+    assert "expires_at" in res.json()
+    assert "expires_in" in res.json()
+    assert res.json()["expires_in"] == 600

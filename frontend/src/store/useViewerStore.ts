@@ -11,6 +11,10 @@ interface ViewerState {
   setModality: (modality: 'Brain' | 'Lung') => void;
   patientId: string | null;
   setPatientId: (id: string | null) => void;
+  meshId: string | null;
+  setMeshId: (id: string | null) => void;
+  expiresAt: number | null;
+  setExpiresAt: (time: number | null) => void;
   lesionVolume: number;
   setLesionVolume: (volume: number) => void;
   appStatus: AppStatus;
@@ -30,6 +34,10 @@ export const useViewerStore = create<ViewerState>((set) => ({
   setModality: (modality) => set({ modality }),
   patientId: null,
   setPatientId: (id) => set({ patientId: id }),
+  meshId: null,
+  setMeshId: (id) => set({ meshId: id }),
+  expiresAt: null,
+  setExpiresAt: (time) => set({ expiresAt: time }),
   lesionVolume: 0,
   setLesionVolume: (volume) => set({ lesionVolume: volume }),
   appStatus: 'IDLE',

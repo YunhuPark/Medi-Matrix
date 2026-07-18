@@ -4,7 +4,7 @@ import { ThreeViewer } from './components/viewer/ThreeViewer'
 import { useViewerStore } from './store/useViewerStore'
 import { Upload, Brain, Activity, Loader2, Stethoscope, Wifi, WifiOff } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
-import { processMedicalMask } from './api/medicalApi'
+import { processMedicalMask, uploadVitals } from './api/medicalApi'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
 import { AuthProvider, useAuth } from './auth/AuthProvider'
 import { AuthPage } from './components/auth/AuthPage'
@@ -16,6 +16,8 @@ function MainApp() {
     modality, setModality,
     setModelUrl,
     patientId, setPatientId,
+    meshId, setMeshId,
+    expiresAt, setExpiresAt,
     lesionVolume, setLesionVolume,
     appStatus, setAppStatus,
   } = useViewerStore()
@@ -56,12 +58,9 @@ function MainApp() {
 
     try {
       toast.info('CSV 업로드 중...')
-      const response = await fetch('http://localhost:8000/api/v1/upload-vitals', {
-        method: 'POST',
-        body: formData,
-      })
+      const response = await uploadVitals(file)
 
-      if (response.ok) {
+      if (response.status === 'success' || response) {
         setHasVitalsFile(true)
         toast.success('생체 신호 데이터 연동 완료 (Real-Data Ready!)')
       } else {
@@ -73,13 +72,54 @@ function MainApp() {
     }
   }
 
-  // 컴포넌트 언마운트 시 WebSocket 정리
+  // 컴포넌트 언마운트 시 WebSocket 정리 및 타이머 정리
   useEffect(() => {
     return () => {
       if (wsRef.current) wsRef.current.close()
       if (intervalRef.current) window.clearInterval(intervalRef.current)
     }
   }, [])
+
+  // Signed URL 갱신 로직 (만료 30초 전 1회 재발급 시도)
+  useEffect(() => {
+    if (!meshId || !expiresAt) return;
+    
+    // 만료 30초 전 계산
+    const now = Math.floor(Date.now() / 1000);
+    const timeUntilRefresh = (expiresAt - 30) - now;
+    
+    // 이미 갱신 시점이 지났다면? 바로 갱신 시도하거나 이미 만료
+    const timeoutMs = Math.max(0, timeUntilRefresh * 1000);
+
+    let refreshTimeout: number | null = null;
+    let refreshAttempted = false;
+
+    const refreshSignedUrl = async () => {
+      if (refreshAttempted) return;
+      refreshAttempted = true;
+      try {
+        const { getSignedUrl } = await import('./api/medicalApi');
+        const data = await getSignedUrl(meshId);
+        setModelUrl(data.glb_url || data.signed_url);
+        setExpiresAt(data.expires_at);
+        toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
+      } catch (err) {
+        console.error("Failed to refresh signed URL", err);
+        toast.error("모델 보안 링크가 만료되었습니다. 페이지를 새로고침하거나 다시 로드해주세요.");
+      }
+    };
+
+    if (timeoutMs > 0) {
+      refreshTimeout = window.setTimeout(refreshSignedUrl, timeoutMs);
+    } else if (timeUntilRefresh <= 0 && expiresAt > now) {
+      // 곧 만료되는데 timeout이 음수면 바로 갱신
+      refreshSignedUrl();
+    }
+
+    return () => {
+      if (refreshTimeout) window.clearTimeout(refreshTimeout);
+    };
+  }, [meshId, expiresAt, setModelUrl, setExpiresAt]);
 
   // 1. .npy 파일 업로드 및 변환 Mutation
   const uploadMutation = useMutation({
@@ -94,8 +134,10 @@ function MainApp() {
     },
     onSuccess: (data, _variables, context) => {
       toast.success(`[${modality}] AI 3D 메쉬 생성 및 렌더링 완료!`, { id: context?.toastId })
-      setModelUrl(data.glb_url)
+      setModelUrl(data.glb_url || data.signed_url)
       setPatientId(data.patient_id)
+      setMeshId(data.mesh_id)
+      setExpiresAt(data.expires_at)
       setLesionVolume(data.lesion_volume)
       setAppStatus('RENDERED')
     },
@@ -115,7 +157,7 @@ function MainApp() {
   })
 
   // WebSocket 스트리밍 토글 함수
-  const toggleStreaming = () => {
+  const toggleStreaming = async () => {
     if (isStreaming) {
       // 스트리밍 중지
       if (wsRef.current) {
@@ -132,7 +174,14 @@ function MainApp() {
         return
       }
       
-      const wsUrl = `ws://localhost:8000/api/v1/triage/stream`
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        toast.error("인증 토큰이 만료되었습니다. 다시 로그인해주세요.")
+        return
+      }
+      
+      const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/api/v1'
+      const wsUrl = `${wsBase}/triage/stream`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
@@ -144,7 +193,7 @@ function MainApp() {
         // 백엔드에 인증 토큰 및 스트리밍 시작 트리거 전송
         ws.send(JSON.stringify({
           type: "auth",
-          access_token: session?.access_token,
+          access_token: session.access_token,
           patient_id: patientId,
           volume: lesionVolume
         }))

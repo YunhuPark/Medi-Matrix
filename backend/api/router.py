@@ -177,19 +177,37 @@ async def triage_websocket_stream(websocket: WebSocket):
     try:
         # Rate limit based on IP first
         client_ip = websocket.client.host if websocket.client else "unknown"
-        if not websocket_limiter.is_allowed(client_ip):
+        trust_proxy = os.environ.get("TRUST_PROXY_HEADERS", "").lower() == "true"
+        if trust_proxy:
+            forwarded = websocket.headers.get("x-forwarded-for")
+            if forwarded:
+                client_ip = forwarded.split(",")[0].strip()
+
+        if not websocket_limiter.is_allowed(f"ip:{client_ip}"):
             await websocket.close(code=4429)
             return
             
-        allowed_origins = os.environ.get("ALLOWED_ORIGINS", "")
+        app_env = os.environ.get("APP_ENV", "development")
+        allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "").strip()
         origin = websocket.headers.get("origin")
-        if allowed_origins and origin not in allowed_origins.split(","):
+        
+        if app_env == "production" and not allowed_origins_str:
+            # Fail-closed in production if no origins specified
             await websocket.close(code=4401)
             return
+            
+        if allowed_origins_str:
+            allowed_list = [o.strip() for o in allowed_origins_str.split(",") if o.strip()]
+            if origin not in allowed_list:
+                await websocket.close(code=4401)
+                return
             
         # 클라이언트로부터 초기 1회 트리거 수신 (인증 및 환자 ID)
         try:
             data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            if len(data.encode('utf-8')) > 8192:
+                await websocket.close(code=4401)
+                return
             payload = json.loads(data)
         except asyncio.TimeoutError:
             await websocket.close(code=4401)
@@ -236,6 +254,26 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.close(code=4401)
             return
 
+        # Check user-based rate limit
+        if not websocket_limiter.is_allowed(f"user:{valid_uuid}"):
+            await websocket.close(code=4429)
+            return
+
+        # Handle token expiration (exp claim)
+        # Note: In a real app we'd decode the JWT to get the exact exp, but since we are relying on Supabase Auth API
+        # Supabase API usually returns token info, but if we need the explicit JWT exp, we can parse it locally without verifying sig.
+        import base64
+        try:
+            parts = token.split(".")
+            if len(parts) == 3:
+                payload_padding = parts[1] + "=" * (4 - len(parts[1]) % 4)
+                jwt_payload = json.loads(base64.burlsafe_decode(payload_padding).decode("utf-8"))
+                exp = jwt_payload.get("exp")
+            else:
+                exp = None
+        except Exception:
+            exp = None
+
         patient_id = payload.get("patient_id", "unknown")
         volume = float(payload.get("volume", 0))
 
@@ -265,6 +303,12 @@ async def triage_websocket_stream(websocket: WebSocket):
             reader = csv.DictReader(f)
             for row in reader:
                 await asyncio.sleep(1.0)
+                
+                # Check JWT Expiration
+                import time
+                if exp and time.time() > exp:
+                    await websocket.close(code=4401)
+                    return
 
                 hr = float(row.get("hr", 80))
                 bp_sys = float(row.get("bpSys", 120))
@@ -424,12 +468,21 @@ async def process_medical_mri(
             bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "medical-meshes")
             destination_path = f"{current_user.user_id}/{mesh_uuid}.glb"
 
+            try:
+                expires_in = int(os.environ.get("SIGNED_URL_EXPIRES_IN", "600"))
+            except ValueError:
+                expires_in = 600
+            expires_in = max(60, min(expires_in, 900))
+            
+            import time
+            expires_at = int(time.time()) + expires_in
+
             # Supabase 업로드 및 Signed URL 획득
             signed_url = upload_file_to_supabase(
                 bucket_name=bucket_name,
                 file_path=glb_file_path,
                 destination_path=destination_path,
-                expires_in=600
+                expires_in=expires_in
             )
 
             print("[Router] [OK] Success -> Mesh generated and uploaded.")
@@ -441,7 +494,9 @@ async def process_medical_mri(
                     "message": "Mesh generated and uploaded successfully.",
                     "mesh_id": mesh_uuid,
                     "glb_url": signed_url,
-                    "expires_in": 600,
+                    "signed_url": signed_url,
+                    "expires_in": expires_in,
+                    "expires_at": expires_at,
                     "patient_id": mock_patient_id,
                     "lesion_volume": lesion_volume
                 },
@@ -484,7 +539,14 @@ async def get_signed_url(
     bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "medical-meshes")
     destination_path = f"{current_user.user_id}/{valid_mesh_id}.glb"
     
-    expires_in = int(os.environ.get("SIGNED_URL_EXPIRES_IN", "600"))
+    try:
+        expires_in = int(os.environ.get("SIGNED_URL_EXPIRES_IN", "600"))
+    except ValueError:
+        expires_in = 600
+    expires_in = max(60, min(expires_in, 900))
+    
+    import time
+    expires_at = int(time.time()) + expires_in
     
     try:
         supabase = get_supabase_client()
@@ -499,8 +561,10 @@ async def get_signed_url(
         return JSONResponse(
             content={
                 "mesh_id": valid_mesh_id,
+                "glb_url": signed_url,
                 "signed_url": signed_url,
-                "expires_at": expires_in
+                "expires_in": expires_in,
+                "expires_at": expires_at
             },
             headers={"Cache-Control": "no-store"}
         )

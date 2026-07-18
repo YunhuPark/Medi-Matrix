@@ -10,10 +10,15 @@ class CurrentUser(BaseModel):
 
 security = HTTPBearer(auto_error=False)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> CurrentUser:
+async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Security(security)) -> CurrentUser:
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentication credentials were not provided.")
     
+    from core.rate_limit import auth_limiter, get_client_ip
+    ip_key = f"ip:{get_client_ip(request)}"
+    if not auth_limiter.is_allowed(ip_key):
+        raise HTTPException(status_code=429, detail="Too Many Requests")
+
     token = credentials.credentials
 
     supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")

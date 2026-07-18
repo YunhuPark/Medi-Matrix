@@ -2,17 +2,21 @@ import time
 from fastapi import Request, HTTPException
 from collections import defaultdict
 import threading
+import os
+
+def default_get_time():
+    return time.monotonic()
 
 class RateLimiter:
-    def __init__(self, requests: int, window_seconds: int):
+    def __init__(self, requests: int, window_seconds: int, get_time_func=None):
         self.requests = requests
         self.window_seconds = window_seconds
         self.history = defaultdict(list)
         self.lock = threading.Lock()
         self.max_entries = 10000
+        self.get_time = get_time_func or default_get_time
 
-    def cleanup(self):
-        now = time.time()
+    def cleanup(self, now: float):
         keys_to_delete = []
         for key, timestamps in self.history.items():
             valid_timestamps = [t for t in timestamps if now - t < self.window_seconds]
@@ -25,14 +29,13 @@ class RateLimiter:
 
     def is_allowed(self, key: str) -> bool:
         with self.lock:
-            # Prevent unbounded memory growth
-            if len(self.history) > self.max_entries:
-                self.cleanup()
-                
-            now = time.time()
-            timestamps = self.history.get(key, [])
+            now = self.get_time()
+            if len(self.history) >= self.max_entries and key not in self.history:
+                self.cleanup(now)
+                if len(self.history) >= self.max_entries and key not in self.history:
+                    return False
             
-            # Remove old requests for this key
+            timestamps = self.history.get(key, [])
             timestamps = [t for t in timestamps if now - t < self.window_seconds]
             self.history[key] = timestamps
             
@@ -48,20 +51,32 @@ upload_vitals_limiter = RateLimiter(requests=10, window_seconds=600)
 triage_send_limiter = RateLimiter(requests=30, window_seconds=60)
 signed_url_limiter = RateLimiter(requests=30, window_seconds=60)
 websocket_limiter = RateLimiter(requests=5, window_seconds=60)
+auth_limiter = RateLimiter(requests=100, window_seconds=60)
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    trust_proxy = os.environ.get("TRUST_PROXY_HEADERS", "").lower() == "true"
+    if trust_proxy:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 def check_rate_limit(request: Request, limiter: RateLimiter, user_id: str = None):
     ip = get_client_ip(request)
-    key = f"{user_id}:{ip}" if user_id else ip
     
-    if not limiter.is_allowed(key):
+    ip_key = f"ip:{ip}"
+    if not limiter.is_allowed(ip_key):
         raise HTTPException(
             status_code=429, 
             detail="Too Many Requests",
             headers={"Retry-After": str(limiter.window_seconds)}
         )
+        
+    if user_id:
+        user_key = f"user:{user_id}"
+        if not limiter.is_allowed(user_key):
+            raise HTTPException(
+                status_code=429, 
+                detail="Too Many Requests",
+                headers={"Retry-After": str(limiter.window_seconds)}
+            )
