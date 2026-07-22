@@ -10,16 +10,16 @@ jobs:
   backend-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt || true
-          pip install pytest pytest-asyncio pytest-timeout httpx anyio starlette
+          python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          python -m pip check
       - name: Compile backend and triage_mock_server
         run: python -m compileall -q backend/ triage_mock_server/
       - name: Run backend tests
@@ -28,11 +28,11 @@ jobs:
   frontend-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci
@@ -41,7 +41,7 @@ jobs:
         run: npm run lint
       - name: Run tests
         working-directory: ./frontend
-        run: npm run test -- --run
+        run: npm run test
       - name: Build
         working-directory: ./frontend
         run: npm run build

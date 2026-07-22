@@ -25,5 +25,9 @@ export function getWebSocketUrl(): string {
   // Remove trailing slashes
   baseUrl = baseUrl.replace(/\/+$/, '');
 
+  if (baseUrl.endsWith('/triage/stream')) {
+    return baseUrl;
+  }
+  
   return `${baseUrl}/triage/stream`;
 }

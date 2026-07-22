@@ -7,7 +7,6 @@ scikit-image==0.22.0
 trimesh==4.1.4
 supabase==2.3.4
 python-dotenv==1.0.1
-httpx==0.26.0
+httpx==0.25.2
 nibabel==5.2.1
 scipy==1.12.0
-python-dotenv

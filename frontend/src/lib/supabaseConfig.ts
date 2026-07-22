@@ -13,7 +13,7 @@ export function validateSupabaseConfig(url: string | undefined, key: string | un
 
   // Check valid key formats
   // We allow 'sb_publishable_' and legacy JWT format (eyJ...) which might be used as anon keys in older Supabase setups
-  const isPublishable = key.includes('sb_publishable_');
+  const isPublishable = key.startsWith('sb_publishable_');
   const isLegacyJwt = key.startsWith('eyJ') && key.split('.').length === 3;
   
   if (!isPublishable && !isLegacyJwt) {

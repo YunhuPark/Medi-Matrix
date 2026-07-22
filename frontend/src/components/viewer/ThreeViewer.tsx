@@ -39,7 +39,6 @@ function ModelScene({ loadedGroup }: ModelSceneProps) {
     // 바운딩 박스 기반 중앙 정렬 (인위적인 스케일링 제거)
     const box = new THREE.Box3().setFromObject(container);
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
 
     // 중앙으로 이동
     container.position.set(-center.x, -center.y, -center.z);
@@ -63,7 +62,7 @@ function ModelScene({ loadedGroup }: ModelSceneProps) {
       controlsRef.current.update();
     }
 
-    console.log('[ThreeViewer] Model placed. Size:', size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1), 'Radius:', sphere.radius.toFixed(1));
+
   }, [loadedGroup, camera]);
 
   // 투명도 실시간 적용 (매 프레임)
@@ -155,7 +154,7 @@ export const ThreeViewer: React.FC<ThreeViewerProps> = ({ onLoadFailure }) => {
 
     let cancelled = false;
 
-    console.log('[ThreeViewer] Loading GLB from:', modelUrl);
+
     setIsLoading(true);
     setLoadError(null);
 
@@ -164,7 +163,7 @@ export const ThreeViewer: React.FC<ThreeViewerProps> = ({ onLoadFailure }) => {
       modelUrl,
       (gltf) => {
         if (cancelled) return;
-        console.log('[ThreeViewer] GLB loaded successfully');
+
 
         const group = new THREE.Group();
         group.add(gltf.scene);
@@ -196,19 +195,15 @@ export const ThreeViewer: React.FC<ThreeViewerProps> = ({ onLoadFailure }) => {
           }
         });
 
-        console.log(`[ThreeViewer] ${meshCount} mesh(es) processed`);
+
         setLoadedGroup(group);
         setIsLoading(false);
       },
-      (progress) => {
-        if (progress.total > 0) {
-          const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
-          console.log(`[ThreeViewer] Loading: ${pct}%`);
-        }
+      () => {
       },
       (error) => {
         if (cancelled) return;
-        console.error('[ThreeViewer] GLB load error:', error);
+
         setLoadError(error instanceof Error ? error.message : String(error));
         setIsLoading(false);
         if (onLoadFailure) {

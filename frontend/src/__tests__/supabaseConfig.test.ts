@@ -40,6 +40,12 @@ describe('supabaseConfig tests', () => {
     expect(res.error).toBe('Invalid Supabase key format.');
   });
 
+  it('rejects keys containing but not starting with sb_publishable_', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'evil_sb_publishable_example');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Invalid Supabase key format.');
+  });
+
   it('enforces HTTPS in production', () => {
     vi.stubEnv('PROD', true);
     
