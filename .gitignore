@@ -24,3 +24,10 @@ coverage/
 backend/data/real_vitals.csv
 backend/data/uploads/
 backend/data/users/
+
+# Synthetic Demo Datasets
+backend/demo_datasets/generated/*.csv
+backend/demo_datasets/generated/*.nii.gz
+backend/demo_datasets/generated/*.npy
+contest_artifacts/
+*.zip

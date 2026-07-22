@@ -5,6 +5,8 @@ import numpy as np
 import nibabel as nib
 import hashlib
 import json
+import zipfile
+import shutil
 
 def generate_vitals_csv(file_path: str, scenario: str, num_rows: int = 100, force: bool = False):
     if os.path.exists(file_path) and not force:
@@ -118,6 +120,7 @@ def main():
     parser.add_argument('--force', action='store_true', help='Overwrite existing files.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
     parser.add_argument('--out-dir', type=str, default='../demo_datasets/generated', help='Output directory relative to script.')
+    parser.add_argument('--package', action='store_true', help='Create ZIP package for Google Drive distribution.')
     
     args = parser.parse_args()
     
@@ -136,7 +139,7 @@ def main():
             files_to_hash.append(csv_path)
             
     # 3D Volume
-    nifti_path = os.path.join(base_dir, 'synthetic_brain_volume.nii.gz')
+    nifti_path = os.path.join(base_dir, 'synthetic_brain_like_volume.nii.gz')
     mask_path = os.path.join(base_dir, 'synthetic_lesion_mask.npy')
     generated_3d = generate_3d_volume(nifti_path, mask_path, force=args.force)
     
@@ -185,6 +188,35 @@ def main():
             
         print("Demo data generation complete. Manifest created.")
         print(f"Total size: {total_size / 1024 / 1024:.2f} MB")
+        
+    if args.package:
+        # Create a ZIP file containing ONLY the generated output
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        contest_dir = os.path.join(root_dir, "contest_artifacts")
+        os.makedirs(contest_dir, exist_ok=True)
+        zip_path = os.path.join(contest_dir, "Medi-Matrix_Contest_Demo.zip")
+        
+        # We define an explicit allow-list of files to include from base_dir
+        allow_list = [
+            'synthetic_vitals_stable.csv',
+            'synthetic_vitals_warning.csv',
+            'synthetic_vitals_critical.csv',
+            'synthetic_brain_like_volume.nii.gz',
+            'synthetic_lesion_mask.npy',
+            'manifest.json',
+            'expected_results.json',
+            'DATASET_CARD.md',
+            'README_FIRST.md'
+        ]
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for item in allow_list:
+                item_path = os.path.join(base_dir, item)
+                if os.path.exists(item_path):
+                    # add to zip at root level
+                    zipf.write(item_path, arcname=item)
+                    
+        print(f"Package created at: {zip_path}")
 
 if __name__ == "__main__":
     main()

@@ -33,22 +33,24 @@
 
 ---
 
-## 📂 공모전 데모 데이터 (Synthetic Demo Datasets)
+## 📂 공모전 심사용 합성 데이터 (Synthetic Demo Datasets)
 
 이 프로젝트는 심사 및 시연을 위해 **100% 코드로 생성된 합성 데이터(Synthetic Data)**를 제공합니다. 
 > **주의**: 실제 환자 데이터는 절대로 업로드하지 마십시오. 본 데이터는 임상 진단용이 아닙니다.
+> 최종 출품작 설명서에서 본 합성 데이터를 포함한 **Google Drive 링크**를 제공할 예정입니다.
 
-### 데이터 생성 및 사용 방법
+### 데이터 생성 및 패키지 생성 방법 (로컬)
 1. **생성 명령**:
    ```bash
    cd backend
-   python scripts/generate_demo_data.py
+   python scripts/generate_demo_data.py --force --package
    ```
-2. **제공되는 시나리오**:
-   - **생체신호 (Vitals)**: `synthetic_vitals_stable.csv`, `synthetic_vitals_warning.csv`, `synthetic_vitals_critical.csv` 3가지 위험도 단계를 시뮬레이션합니다.
-   - **3D 영상**: `synthetic_brain_volume.nii.gz` (수학적 모델로 합성된 3D 팬텀 볼륨)
+2. **생성 결과**:
+   - `backend/demo_datasets/generated/` 내에 개별 파일들이 생성됩니다.
+   - `contest_artifacts/Medi-Matrix_Contest_Demo.zip` 패키지가 생성됩니다.
+   - **주의**: 생성 산출물(`.csv`, `.nii.gz`, `.npy`, `.zip` 등)은 Git에 추적(Commit)되지 않습니다.
 
-생성된 파일은 `backend/demo_datasets/generated/` 디렉터리에서 확인할 수 있으며, 이 데이터를 프론트엔드 UI를 통해 업로드하여 Triage 분석 흐름을 안전하게 테스트할 수 있습니다.
+생성된 파일 또는 출품작 설명서의 ZIP 파일을 해제한 후, 프론트엔드 UI를 통해 직접 업로드하여 Triage 분석 흐름을 테스트할 수 있습니다.
 
 ---
 

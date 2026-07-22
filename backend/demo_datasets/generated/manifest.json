@@ -20,7 +20,7 @@
       "shape": "100 rows, 6 cols",
       "dtype": "float/string"
     },
-    "synthetic_brain_volume.nii.gz": {
+    "synthetic_brain_like_volume.nii.gz": {
       "sha256": "8e4c7f1a7a5bd14a9407f9ce26d5ed7d8f7be4be4cd08f966c67ec0e6e7bf274",
       "size_bytes": 912394,
       "shape": [

@@ -96,3 +96,37 @@ def test_no_overwrite_without_force(tmp_path, capsys):
     # Try to generate again with force
     result2 = generate_vitals_csv(str(file1), "stable", num_rows=10, force=True)
     assert result2
+
+def test_package_creation(tmp_path):
+    import subprocess
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../scripts/generate_demo_data.py"))
+    
+    # We run the script in a subprocess with a custom out-dir inside tmp_path
+    # Wait, it's easier to mock out_dir but the script uses an argument.
+    out_dir = tmp_path / "generated"
+    
+    # Run the script via python
+    env = os.environ.copy()
+    result = subprocess.run([
+        sys.executable, script_path, 
+        "--force", "--package", 
+        "--out-dir", str(out_dir)
+    ], capture_output=True, text=True, env=env)
+    
+    assert result.returncode == 0
+    
+    # Check if zip exists
+    # The script hardcodes the zip path relative to __file__: os.path.join(os.path.dirname(__file__), "../..", "contest_artifacts")
+    # This means the zip is always created at project root contest_artifacts. 
+    # Let's verify it exists and doesn't contain .env.
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+    zip_path = os.path.join(root_dir, "contest_artifacts", "Medi-Matrix_Contest_Demo.zip")
+    assert os.path.exists(zip_path)
+    
+    import zipfile
+    with zipfile.ZipFile(zip_path, 'r') as zipf:
+        namelist = zipf.namelist()
+        assert "synthetic_vitals_stable.csv" in namelist
+        assert ".env" not in namelist
+        assert "README.md" not in namelist
+        assert ".git" not in namelist
