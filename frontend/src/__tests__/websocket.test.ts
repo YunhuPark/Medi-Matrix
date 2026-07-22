@@ -51,6 +51,7 @@ describe('websocketUrl tests', () => {
     const url = getWebSocketUrl();
     expect(url).toBe('wss://example.com/api/v1/triage/stream');
     
+    // @ts-ignore
     window.location = originalLocation;
   });
 });

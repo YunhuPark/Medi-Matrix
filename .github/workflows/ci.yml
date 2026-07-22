@@ -23,7 +23,8 @@ jobs:
       - name: Compile backend and triage_mock_server
         run: python -m compileall -q backend/ triage_mock_server/
       - name: Run backend tests
-        run: python -m pytest backend/tests -q
+        working-directory: ./backend
+        run: python -m pytest tests -q
 
   frontend-test:
     runs-on: ubuntu-latest
