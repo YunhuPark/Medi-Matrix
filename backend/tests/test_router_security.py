@@ -4,7 +4,16 @@ import numpy as np
 import io
 import os
 import httpx
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
+import sys
+
+# Mock ML modules to prevent PyTorch deadlocks during test collection
+mock_inference_service = MagicMock()
+mock_mamba_service = MagicMock()
+sys.modules["services.inference_service"] = mock_inference_service
+sys.modules["services.mamba_service"] = mock_mamba_service
+sys.modules["api.mamba_inference"] = MagicMock()
+
 from main import app
 import uuid
 import time
@@ -351,22 +360,86 @@ def reset_rate_limiters():
     websocket_limiter.history.clear()
     yield
 
-@patch("httpx.AsyncClient.get")
-def test_ws_valid_auth(mock_get):
+@patch("api.router.httpx.AsyncClient")
+def test_ws_valid_auth(mock_client_class):
+    mock_client = AsyncMock()
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"id": valid_uuid}
-    mock_get.return_value = mock_resp
+    mock_client.get.return_value = mock_resp
+    mock_client_class.return_value.__aenter__.return_value = mock_client
     
-    with patch("api.router.os.path.exists", return_value=True):
+    csv_path = os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv")
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    with open(csv_path, "w", encoding="utf-8") as f:
+        f.write("hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98")
+        
+    try:
         with patch.dict(os.environ, {"ALLOWED_ORIGINS": "", "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
-            with patch("builtins.open", return_value=io.StringIO("hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98")):
-                with patch("api.mamba_inference.MambaSystemicPredictor") as mock_mamba:
-                    mock_mamba.return_value.predict.return_value = {"sepsis": 0.1, "ards": 0.1, "shock": 0.1}
-                    with client.websocket_connect("/api/v1/triage/stream") as websocket:
-                        websocket.send_json({"type": "auth", "access_token": "valid", "patient_id": "123", "volume": 100})
-                        data = websocket.receive_json()
-                        assert data["status"] == "streaming"
+            mock_mamba_module = MagicMock()
+            mock_mamba_class = MagicMock()
+            mock_mamba_class.return_value.predict.return_value = {"sepsis": 0.1, "ards": 0.1, "shock": 0.1}
+            mock_mamba_module.MambaSystemicPredictor = mock_mamba_class
+            with patch.dict("sys.modules", {"api.mamba_inference": mock_mamba_module}):
+                with client.websocket_connect("/api/v1/triage/stream") as websocket:
+                    # Create a valid-looking JWT with future exp
+                    import base64, json, time
+                    header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+                    payload = base64.urlsafe_b64encode(json.dumps({"exp": int(time.time()) + 3600}).encode()).decode().rstrip("=")
+                    valid_token = f"{header}.{payload}.signature"
+                    websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": "123", "volume": 100})
+                    data = websocket.receive_json()
+                    assert data["status"] == "streaming"
+                    websocket.close()
+    finally:
+        if os.path.exists(csv_path):
+            os.remove(csv_path)
+
+@patch("api.router.httpx.AsyncClient")
+def test_ws_jwt_missing_exp(mock_client_class):
+    mock_client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"id": valid_uuid}
+    mock_client.get.return_value = mock_resp
+    mock_client_class.return_value.__aenter__.return_value = mock_client
+    import base64, json
+    header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+    payload = base64.urlsafe_b64encode(b'{"sub":"user123"}').decode().rstrip("=")
+    token_no_exp = f"{header}.{payload}.sig"
+    
+    with client.websocket_connect("/api/v1/triage/stream") as websocket:
+        websocket.send_json({"type": "auth", "access_token": token_no_exp, "patient_id": "123", "volume": 100})
+        with pytest.raises(WebSocketDisconnect) as e:
+            websocket.receive_text()
+        assert e.value.code == 4401
+
+@patch("api.router.httpx.AsyncClient")
+def test_ws_invalid_payload_types(mock_client_class):
+    mock_client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"id": valid_uuid}
+    mock_client.get.return_value = mock_resp
+    mock_client_class.return_value.__aenter__.return_value = mock_client
+    import base64, json, time
+    header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": int(time.time()) + 3600}).encode()).decode().rstrip("=")
+    valid_token = f"{header}.{payload}.signature"
+    
+    with client.websocket_connect("/api/v1/triage/stream") as websocket:
+        # Invalid patient_id type
+        websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": ["not_a_string"], "volume": 100})
+        with pytest.raises(WebSocketDisconnect) as e:
+            websocket.receive_text()
+        assert e.value.code == 4401
+        
+    with client.websocket_connect("/api/v1/triage/stream") as websocket:
+        # Invalid volume type
+        websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": "123", "volume": "not_a_number"})
+        with pytest.raises(WebSocketDisconnect) as e:
+            websocket.receive_text()
+        assert e.value.code == 4401
 
 def test_ws_no_auth_close():
     with client.websocket_connect("/api/v1/triage/stream") as websocket:

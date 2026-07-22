@@ -7,12 +7,18 @@ import httpx
 import json
 import asyncio
 import shutil
+import csv
+import math
+import tempfile
+import time
+from typing import Optional
+from fastapi.responses import JSONResponse
 
 # 내부 서비스 모듈 임포트
 from services.mesh_processor import create_mesh_from_mask
 from services.supabase_client import upload_file_to_supabase, get_supabase_client
 from services.mamba_service import mamba_simulator
-from core.auth import get_current_user, CurrentUser
+from core.auth import get_current_user, CurrentUser, decode_verified_token_exp
 from core.rate_limit import check_rate_limit, process_mri_limiter, upload_vitals_limiter, triage_send_limiter, signed_url_limiter, websocket_limiter
 
 router = APIRouter()
@@ -259,73 +265,78 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.close(code=4429)
             return
 
-        # Handle token expiration (exp claim)
-        # Note: In a real app we'd decode the JWT to get the exact exp, but since we are relying on Supabase Auth API
-        # Supabase API usually returns token info, but if we need the explicit JWT exp, we can parse it locally without verifying sig.
-        import base64
+        # JWT Exp validation (only after verifying the token is valid with Auth service)
+        exp = decode_verified_token_exp(token)
+        if exp is None:
+            await websocket.close(code=4401)
+            return
+
+        patient_id = payload.get("patient_id")
+        volume = payload.get("volume")
+        
+        # Validate types and ranges
+        if not isinstance(patient_id, str) or not (1 <= len(patient_id) <= 50):
+            await websocket.close(code=4401)
+            return
+            
         try:
-            parts = token.split(".")
-            if len(parts) == 3:
-                payload_padding = parts[1] + "=" * (4 - len(parts[1]) % 4)
-                jwt_payload = json.loads(base64.urlsafe_b64decode(payload_padding).decode("utf-8"))
-                exp = jwt_payload.get("exp")
-            else:
-                exp = None
-        except Exception:
-            exp = None
-
-        patient_id = payload.get("patient_id", "unknown")
-        volume = float(payload.get("volume", 0))
-
-        import csv
-        csv_path = os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv")
-
+            volume = float(volume)
+            if volume < 0 or volume > 100000:
+                raise ValueError
+        except (TypeError, ValueError):
+            await websocket.close(code=4401)
+            return
+        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv"))
+        print(f"[DEBUG] csv_path: {csv_path}, exists: {os.path.exists(csv_path)}")
         if not os.path.exists(csv_path):
             await websocket.send_json({"status": "error", "message": "실제 환자 CSV 데이터가 업로드되지 않았습니다."})
             await websocket.close()
             return
-
+            
         try:
+            print("[DEBUG] Importing mamba_inference")
             from .mamba_inference import MambaSystemicPredictor
             mamba_predictor = MambaSystemicPredictor()
-        except Exception:
-            await websocket.send_json({
-                "status": "error",
-                "code": "MODEL_UNAVAILABLE",
-                "message": "Prediction model is currently unavailable."
-            })
-            await websocket.close()
+            print("[DEBUG] Mamba predictor initialized")
+        except Exception as e:
+            print(f"[DEBUG] Exception during Mamba init: {e}")
+            await websocket.close(code=4401)
             return
 
-        window_data = []
-
-        with open(csv_path, "r") as f:
+        print("[DEBUG] Opening CSV file")
+        with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
+                print(f"[DEBUG] Read row, sleeping 1s")
                 await asyncio.sleep(1.0)
+                print(f"[DEBUG] Woke up from sleep")
                 
-                # Check JWT Expiration
-                import time
-                if exp and time.time() > exp:
+                # Check JWT Expiration during stream
+                if time.time() >= exp:
                     await websocket.close(code=4401)
                     return
 
-                hr = float(row.get("hr", 80))
-                bp_sys = float(row.get("bpSys", 120))
-                bp_dia = float(row.get("bpDia", 80))
-                resp = float(row.get("resp", 16))
-                temp = float(row.get("temp", 36.5))
-                spo2 = float(row.get("spo2", 98))
+                try:
+                    hr = float(row.get("hr", 0))
+                    bp_sys = float(row.get("bpSys", 0))
+                    bp_dia = float(row.get("bpDia", 0))
+                    resp = float(row.get("resp", 0))
+                    temp = float(row.get("temp", 0))
+                    spo2 = float(row.get("spo2", 0))
+                except ValueError:
+                    continue
 
-                window_data.append(row)
-                if len(window_data) > 10:
-                    window_data.pop(0) # 10초 윈도우 유지
+                window_data = {
+                    "hr": hr, "bp_sys": bp_sys, "bp_dia": bp_dia,
+                    "resp": resp, "temp": temp, "spo2": spo2
+                }
 
-                # Mamba 인퍼런스를 통한 다중 병증 확률 예측
-                probs = mamba_predictor.predict(window_data)
+                print(f"[DEBUG] Calling mamba_predictor.predict")
+                probs = mamba_predictor.predict([row])
+                print(f"[DEBUG] Predict returned: {probs}")
 
                 # Volume을 추가 피처로 활용 (Multi-modal 앙상블)
-                volume_factor = volume / 20000.0
+                volume_factor = min(volume / 20000.0, 0.5)
 
                 # 각 병증별 최종 확률 계산 (Volume factor 보정)
                 final_sepsis = min(probs["sepsis"] + volume_factor, 1.0)
@@ -375,8 +386,14 @@ async def triage_websocket_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print("[WebSocket] Client disconnected from streaming.")
-    except Exception:
-        print("[WebSocket] Error during streaming.")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[WebSocket] Error during streaming: {e}")
+        try:
+            await websocket.close(code=1011)
+        except RuntimeError:
+            pass
 
 
 import tempfile
