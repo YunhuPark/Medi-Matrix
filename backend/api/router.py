@@ -31,12 +31,12 @@ async def read_file_with_limit(file: UploadFile, max_size: int) -> bytes:
         raise HTTPException(status_code=400, detail="Empty file is not allowed.")
     return bytes(contents)
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class TriageRequest(BaseModel):
-    patient_id: str
+    patient_id: str = Field(..., min_length=1, max_length=128)
     modality: str
-    volume: float = 0.0
+    volume: float = Field(0.0, ge=0.0, le=1000000000.0)
 
 @router.post("/triage/send")
 async def trigger_triage_webhook(
@@ -267,7 +267,7 @@ async def triage_websocket_stream(websocket: WebSocket):
             parts = token.split(".")
             if len(parts) == 3:
                 payload_padding = parts[1] + "=" * (4 - len(parts[1]) % 4)
-                jwt_payload = json.loads(base64.burlsafe_decode(payload_padding).decode("utf-8"))
+                jwt_payload = json.loads(base64.urlsafe_b64decode(payload_padding).decode("utf-8"))
                 exp = jwt_payload.get("exp")
             else:
                 exp = None

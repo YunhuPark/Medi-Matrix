@@ -61,3 +61,26 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
         return CurrentUser(user_id=valid_uuid)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid user data received from Auth service.")
+
+import base64
+import json
+
+def decode_verified_token_exp(token: str) -> int | None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        payload_padding = parts[1] + "=" * (4 - len(parts[1]) % 4)
+        jwt_payload = json.loads(base64.urlsafe_b64decode(payload_padding).decode("utf-8"))
+        exp = jwt_payload.get("exp")
+        if not isinstance(exp, (int, float)):
+            return None
+        import math
+        if math.isnan(exp) or math.isinf(exp):
+            return None
+        import time
+        if exp < int(time.time()):
+            return None
+        return int(exp)
+    except Exception:
+        return None

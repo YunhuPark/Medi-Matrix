@@ -8,12 +8,14 @@ def default_get_time():
     return time.monotonic()
 
 class RateLimiter:
-    def __init__(self, requests: int, window_seconds: int, get_time_func=None):
+    def __init__(self, requests: int, window_seconds: int, get_time_func=None, max_entries: int = 10000):
+        if requests <= 0 or window_seconds <= 0 or max_entries <= 0:
+            raise ValueError("requests, window_seconds, and max_entries must be positive")
         self.requests = requests
         self.window_seconds = window_seconds
         self.history = defaultdict(list)
         self.lock = threading.Lock()
-        self.max_entries = 10000
+        self.max_entries = max_entries
         self.get_time = get_time_func or default_get_time
 
     def cleanup(self, now: float):

@@ -3,11 +3,21 @@ import { supabase } from '../lib/supabase';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
-const medicalApi = axios.create({
+export const medicalApi = axios.create({
   baseURL: API_BASE_URL,
 });
 
 medicalApi.interceptors.request.use(async (config) => {
+  // Prevent token from leaking to external URLs
+  const requestUrl = config.url || '';
+  if (requestUrl.startsWith('http://') || requestUrl.startsWith('https://')) {
+    const base = new URL(API_BASE_URL);
+    const target = new URL(requestUrl);
+    if (target.origin !== base.origin) {
+      throw new Error('Blocked: medicalApi must not make requests to external URLs.');
+    }
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
     config.headers.Authorization = `Bearer ${session.access_token}`;

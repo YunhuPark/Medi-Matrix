@@ -20,9 +20,19 @@ function MainApp() {
     expiresAt, setExpiresAt,
     lesionVolume, setLesionVolume,
     appStatus, setAppStatus,
+    resetMedicalState,
   } = useViewerStore()
   
-  const { session, signOut } = useAuth()
+  const { signOut, getAccessToken } = useAuth()
+
+  const handleSignOut = async () => {
+    resetMedicalState()
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    await signOut()
+  }
   
   const [triageLevel, setTriageLevel] = useState<string | null>(null)
   
@@ -174,8 +184,8 @@ function MainApp() {
         return
       }
       
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const accessToken = await getAccessToken()
+      if (!accessToken) {
         toast.error("인증 토큰이 만료되었습니다. 다시 로그인해주세요.")
         return
       }
@@ -193,7 +203,7 @@ function MainApp() {
         // 백엔드에 인증 토큰 및 스트리밍 시작 트리거 전송
         ws.send(JSON.stringify({
           type: "auth",
-          access_token: session.access_token,
+          access_token: accessToken,
           patient_id: patientId,
           volume: lesionVolume
         }))
@@ -331,7 +341,7 @@ function MainApp() {
           <button 
             className="tab"
             style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }}
-            onClick={signOut}
+            onClick={handleSignOut}
           >
             로그아웃
           </button>

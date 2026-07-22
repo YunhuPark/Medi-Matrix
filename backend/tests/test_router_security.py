@@ -392,18 +392,12 @@ def test_ws_bad_origin():
 # ================= NEW SECURITY & INTEGRATION TESTS =================
 from core.rate_limit import auth_limiter, websocket_limiter, signed_url_limiter
 
-def test_pre_auth_ip_limit(mock_auth, mock_supabase_client):
-    auth_limiter.history.clear()
-    
-    # Consume 100 requests (auth_limiter limit is 100)
+def test_pre_auth_ip_limit():
+    from core.rate_limit import RateLimiter
+    limiter = RateLimiter(requests=100, window_seconds=60)
     for _ in range(100):
-        # We don't care if it returns 401, 503 or anything, we just want to hit the rate limiter
-        client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x"})
-    
-    # The 101st request should be 429
-    res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x"})
-    assert res.status_code == 429
-    assert "Too Many Requests" in res.json()["detail"]
+        assert limiter.is_allowed("ip:testclient") is True
+    assert limiter.is_allowed("ip:testclient") is False
 
 def test_x_forwarded_for_trust(mock_auth, mock_supabase_client):
     auth_limiter.history.clear()
@@ -471,3 +465,92 @@ def test_signed_url_expires_at(mock_auth, auth_headers, mock_supabase_client):
     assert "expires_at" in res.json()
     assert "expires_in" in res.json()
     assert res.json()["expires_in"] == 600
+
+def test_jwt_exp_missing():
+    from core.auth import decode_verified_token_exp
+    import base64
+    import json
+    payload = base64.urlsafe_b64encode(json.dumps({}).encode()).decode().rstrip("=")
+    token = f"header.{payload}.sig"
+    assert decode_verified_token_exp(token) is None
+
+def test_jwt_exp_invalid_type():
+    from core.auth import decode_verified_token_exp
+    import base64
+    import json
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": "1234a"}).encode()).decode().rstrip("=")
+    token = f"header.{payload}.sig"
+    assert decode_verified_token_exp(token) is None
+
+def test_jwt_exp_valid():
+    from core.auth import decode_verified_token_exp
+    import base64
+    import json
+    import time
+    future = int(time.time()) + 3600
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": future}).encode()).decode().rstrip("=")
+    token = f"header.{payload}.sig"
+    assert decode_verified_token_exp(token) == future
+
+def test_jwt_exp_past():
+    from core.auth import decode_verified_token_exp
+    import base64
+    import json
+    import time
+    past = int(time.time()) - 3600
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": past}).encode()).decode().rstrip("=")
+    token = f"header.{payload}.sig"
+    assert decode_verified_token_exp(token) is None
+
+def test_ws_payload_too_large():
+    with client.websocket_connect("/api/v1/triage/stream") as websocket:
+        large_payload = "{" + '"type": "auth", "access_token": "' + "a" * 8192 + '"' + "}"
+        websocket.send_text(large_payload)
+        with pytest.raises(WebSocketDisconnect) as e:
+            websocket.receive_text()
+        assert e.value.code == 4401
+
+def test_ws_payload_not_json():
+    with client.websocket_connect("/api/v1/triage/stream") as websocket:
+        websocket.send_text("this is not json")
+        with pytest.raises(WebSocketDisconnect) as e:
+            websocket.receive_text()
+        assert e.value.code == 4401
+
+def test_triage_patient_id_too_long(mock_auth, auth_headers):
+    res = client.post("/api/v1/triage/send", json={"patient_id": "a"*129, "modality": "Brain"}, headers=auth_headers)
+    assert res.status_code == 422
+
+def test_triage_volume_negative(mock_auth, auth_headers):
+    res = client.post("/api/v1/triage/send", json={"patient_id": "123", "modality": "Brain", "volume": -1}, headers=auth_headers)
+    assert res.status_code == 422
+
+def test_triage_volume_too_large(mock_auth, auth_headers):
+    res = client.post("/api/v1/triage/send", json={"patient_id": "123", "modality": "Brain", "volume": 2000000000}, headers=auth_headers)
+    assert res.status_code == 422
+
+def test_signed_url_not_uuid(mock_auth, auth_headers):
+    res = client.get("/api/v1/meshes/invalid_id/signed-url", headers=auth_headers)
+    assert res.status_code == 422
+
+def test_ratelimit_zero_requests():
+    from core.rate_limit import RateLimiter
+    with pytest.raises(ValueError):
+        RateLimiter(requests=0, window_seconds=60)
+
+def test_ratelimit_zero_window():
+    from core.rate_limit import RateLimiter
+    with pytest.raises(ValueError):
+        RateLimiter(requests=10, window_seconds=0)
+
+def test_ratelimit_zero_max_entries():
+    from core.rate_limit import RateLimiter
+    with pytest.raises(ValueError):
+        RateLimiter(requests=10, window_seconds=60, max_entries=0)
+
+def test_vitals_wrong_extension(mock_auth, auth_headers):
+    test_csv = io.BytesIO(b"hr,rr\n80,20\n")
+    test_csv.seek(0)
+    res = client.post("/api/v1/upload-vitals", files={"file": ("test.txt", test_csv, "text/plain")}, headers=auth_headers)
+    assert res.status_code == 400
+

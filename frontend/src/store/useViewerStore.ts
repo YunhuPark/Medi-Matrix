@@ -23,6 +23,7 @@ interface ViewerState {
   setSepsisProbability: (prob: string | null) => void;
   triageLevel: string | null;
   setTriageLevel: (level: string | null) => void;
+  resetMedicalState: () => void;
 }
 
 export const useViewerStore = create<ViewerState>((set) => ({
@@ -46,4 +47,15 @@ export const useViewerStore = create<ViewerState>((set) => ({
   setSepsisProbability: (prob) => set({ sepsisProbability: prob }),
   triageLevel: null,
   setTriageLevel: (level) => set({ triageLevel: level }),
+  resetMedicalState: () => set({
+    modelUrl: null,
+    patientId: null,
+    meshId: null,
+    expiresAt: null,
+    lesionVolume: 0,
+    appStatus: 'IDLE',
+    sepsisProbability: null,
+    triageLevel: null,
+  }),
 }));
+

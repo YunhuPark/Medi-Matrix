@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   signOut: async () => {},
+  getAccessToken: async () => null,
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -40,8 +42,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
   };
 
+  const getAccessToken = async (): Promise<string | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signOut, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );
