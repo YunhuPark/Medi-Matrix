@@ -135,7 +135,11 @@ function ModelScene({ loadedGroup }: ModelSceneProps) {
 // ─────────────────────────────────────────
 // 메인 ThreeViewer 컴포넌트
 // ─────────────────────────────────────────
-export const ThreeViewer: React.FC = () => {
+interface ThreeViewerProps {
+  onLoadFailure?: () => void;
+}
+
+export const ThreeViewer: React.FC<ThreeViewerProps> = ({ onLoadFailure }) => {
   const modelUrl = useViewerStore((state) => state.modelUrl);
   const [loadedGroup, setLoadedGroup] = useState<THREE.Group | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -207,6 +211,9 @@ export const ThreeViewer: React.FC = () => {
         console.error('[ThreeViewer] GLB load error:', error);
         setLoadError(error instanceof Error ? error.message : String(error));
         setIsLoading(false);
+        if (onLoadFailure) {
+          onLoadFailure();
+        }
       }
     );
 

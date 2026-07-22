@@ -1,36 +1,55 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { validateSupabaseConfig } from '../lib/supabaseConfig';
 
-describe('Supabase Config tests', () => {
-  const validateSupabaseConfig = (url: string, key: string, isProd: boolean) => {
-    if (!key.startsWith('sb_publishable_')) {
-      throw new Error("Invalid Supabase Publishable Key format. Must start with 'sb_publishable_'. Initialization refused.");
-    }
-    if (key.startsWith('sb_secret_') || key.includes('service_role')) {
-      throw new Error("SECURITY BREACH: VITE_SUPABASE_PUBLISHABLE_KEY contains a secret key!");
-    }
-    if (isProd && url.startsWith('http://') && !url.includes('localhost')) {
-      throw new Error("Production Supabase URL must use HTTPS.");
-    }
-    return true
-  }
+describe('supabaseConfig tests', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
-  it('16. sb_publishable_ allowed', () => {
-    expect(validateSupabaseConfig('https://valid.supabase.co', 'sb_publishable_123', true)).toBe(true)
-  })
+  it('rejects missing URL or Key', () => {
+    const res = validateSupabaseConfig('', 'sb_publishable_123');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Supabase URL or Key is missing.');
+  });
 
-  it('17. sb_secret_ rejected', () => {
-    expect(() => validateSupabaseConfig('https://valid.supabase.co', 'sb_secret_123', true)).toThrow('Must start with \'sb_publishable_\'')
-  })
+  it('rejects secret keys absolutely', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'sb_secret_123');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Secret keys are not allowed on the frontend.');
+  });
 
-  it('18. anon/service_role rejected', () => {
-    expect(() => validateSupabaseConfig('https://valid.supabase.co', 'sb_publishable_service_role', true)).toThrow('SECURITY BREACH')
-  })
+  it('rejects service role keys absolutely', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'service_role_key');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Secret keys are not allowed on the frontend.');
+  });
 
-  it('19. Prod HTTP URL rejected', () => {
-    expect(() => validateSupabaseConfig('http://valid.supabase.co', 'sb_publishable_123', true)).toThrow('Production Supabase URL must use HTTPS')
-  })
+  it('allows sb_publishable_ keys', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'sb_publishable_123');
+    expect(res.isValid).toBe(true);
+  });
 
-  it('20. localhost HTTP allowed', () => {
-    expect(validateSupabaseConfig('http://localhost:8000', 'sb_publishable_123', false)).toBe(true)
-  })
-})
+  it('allows legacy JWT keys (eyJ...)', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'eyJhb.123.456');
+    expect(res.isValid).toBe(true);
+  });
+
+  it('rejects invalid key formats (arbitrary strings)', () => {
+    const res = validateSupabaseConfig('https://test.supabase.co', 'random_string_not_valid');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Invalid Supabase key format.');
+  });
+
+  it('enforces HTTPS in production', () => {
+    vi.stubEnv('PROD', true);
+    
+    // http://localhost is allowed
+    let res = validateSupabaseConfig('http://localhost:54321', 'sb_publishable_123');
+    expect(res.isValid).toBe(true);
+    
+    // http://test is NOT allowed
+    res = validateSupabaseConfig('http://test.supabase.co', 'sb_publishable_123');
+    expect(res.isValid).toBe(false);
+    expect(res.error).toBe('Insecure HTTP Supabase URL is not allowed in production.');
+  });
+});

@@ -1,110 +1,103 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useSignedUrlRefresh } from '../hooks/useSignedUrlRefresh';
 
-describe('Signed URL Timer tests', () => {
+describe('useSignedUrlRefresh hook', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-  })
+    vi.useFakeTimers();
+  });
 
   afterEach(() => {
-    vi.useRealTimers()
-    vi.clearAllMocks()
-  })
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
 
-  // We are testing the useEffect logic in App.tsx that handles signed URL refresh
-  // We'll write a simulation of that hook logic to verify it meets the requirements
-
-  const setupTimer = (expiresAt: number, refreshFn: () => Promise<void>) => {
-    const now = Math.floor(Date.now() / 1000)
-    const timeUntilRefresh = (expiresAt - 30) - now
-    const timeoutMs = Math.max(0, timeUntilRefresh * 1000)
-
-    let refreshTimeout: number | null = null
-    let refreshAttempted = false
-
-    const refreshSignedUrl = async () => {
-      if (refreshAttempted) return
-      refreshAttempted = true
-      try {
-        await refreshFn()
-      } catch (err) {
-        // mock failure logic
-      }
-    }
-
-    if (timeoutMs > 0) {
-      refreshTimeout = window.setTimeout(refreshSignedUrl, timeoutMs)
-    } else if (timeUntilRefresh <= 0 && expiresAt > now) {
-      refreshSignedUrl()
-    }
-
-    return () => {
-      if (refreshTimeout) window.clearTimeout(refreshTimeout)
-    }
-  }
-
-  it('11. Runs 30s before exp', () => {
-    const mockRefresh = vi.fn().mockResolvedValue(undefined)
-    const nowSecs = Math.floor(Date.now() / 1000)
-    const expiresAt = nowSecs + 100 // expires in 100s
+  it('triggers refresh 30 seconds before expiration', () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
     
-    setupTimer(expiresAt, mockRefresh)
+    // Expires in 100 seconds from now
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + 100;
+
+    renderHook(() => useSignedUrlRefresh({
+      meshId: 'test-mesh',
+      expiresAt,
+      onRefresh,
+      onError
+    }));
+
+    // Fast forward 69 seconds -> should not trigger yet
+    vi.advanceTimersByTime(69 * 1000);
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    // Fast forward 1 second (now 70 seconds elapsed, 30s before expiration)
+    vi.advanceTimersByTime(1 * 1000);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledWith('test-mesh');
+  });
+
+  it('retries exactly once on failure, then calls onError', async () => {
+    // Fail first time, fail second time
+    const onRefresh = vi.fn().mockRejectedValue(new Error('Network error'));
+    const onError = vi.fn();
+
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + 100;
+
+    renderHook(() => useSignedUrlRefresh({
+      meshId: 'test-mesh',
+      expiresAt,
+      onRefresh,
+      onError
+    }));
+
+    // Trigger timer
+    vi.advanceTimersByTime(70 * 1000);
+
+    // Wait for promise rejections to settle
+    await vi.runAllTimersAsync();
+
+    expect(onRefresh).toHaveBeenCalledTimes(2); // 1 initial + 1 retry
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith("Signed URL 갱신에 최종 실패했습니다.");
+  });
+
+  it('refreshes immediately on handleLoadFailure', () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + 100;
+
+    const { result } = renderHook(() => useSignedUrlRefresh({
+      meshId: 'test-mesh',
+      expiresAt,
+      onRefresh,
+      onError
+    }));
+
+    result.current.handleLoadFailure();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears timer on unmount', () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
     
-    // Fast forward to 29s before exp
-    vi.advanceTimersByTime(70 * 1000)
-    expect(mockRefresh).toHaveBeenCalledOnce()
-  })
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + 100;
 
-  it('12. Cancelled before run -> doesnt run', () => {
-    const mockRefresh = vi.fn().mockResolvedValue(undefined)
-    const nowSecs = Math.floor(Date.now() / 1000)
-    const expiresAt = nowSecs + 100 // expires in 100s
+    const { unmount } = renderHook(() => useSignedUrlRefresh({
+      meshId: 'test-mesh',
+      expiresAt,
+      onRefresh,
+      onError: vi.fn()
+    }));
     
-    const cancel = setupTimer(expiresAt, mockRefresh)
+    unmount();
     
-    // advance 30s
-    vi.advanceTimersByTime(30 * 1000)
-    cancel() // clear timeout
-    
-    // advance to 70s
-    vi.advanceTimersByTime(40 * 1000)
-    expect(mockRefresh).not.toHaveBeenCalled()
-  })
-
-  it('13. Retries once on fail', () => {
-    // In our simplified setup logic here we didn't implement the retry (as it's in App.tsx or medicalApi)
-    // The requirement says "갱신 실패 시 1회만 재시도한다." (Retries once on fail).
-    // Let's implement that retry logic to verify it works.
-    let attempts = 0
-    let refreshAttempted = false
-    const refreshSignedUrlWithRetry = async () => {
-      if (refreshAttempted) return
-      refreshAttempted = true
-      
-      const tryRefresh = async (retryCount = 0) => {
-        attempts++
-        try {
-          throw new Error('fail')
-        } catch (e) {
-          if (retryCount < 1) {
-            await tryRefresh(retryCount + 1)
-          }
-        }
-      }
-      await tryRefresh()
-    }
-
-    refreshSignedUrlWithRetry()
-    expect(attempts).toBe(2)
-  })
-
-  it('14. Final fail calls callback once', () => {
-    // Verified by the fact that tryRefresh doesn't continue after retryCount >= 1
-    expect(true).toBe(true)
-  })
-
-  it('15. Logout/unmount cancel fn verified', () => {
-    const cancel = setupTimer(Date.now() / 1000 + 100, vi.fn())
-    expect(typeof cancel).toBe('function')
-    expect(cancel).not.toThrow()
-  })
-})
+    vi.advanceTimersByTime(70 * 1000);
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+});

@@ -8,6 +8,9 @@ import { processMedicalMask, uploadVitals } from './api/medicalApi'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
 import { AuthProvider, useAuth } from './auth/AuthProvider'
 import { AuthPage } from './components/auth/AuthPage'
+import { getWebSocketUrl } from './lib/websocketUrl'
+import { useSignedUrlRefresh } from './hooks/useSignedUrlRefresh'
+import { getSignedUrl } from './api/medicalApi'
 import './App.css'
 
 function MainApp() {
@@ -90,46 +93,24 @@ function MainApp() {
     }
   }, [])
 
-  // Signed URL 갱신 로직 (만료 30초 전 1회 재발급 시도)
-  useEffect(() => {
-    if (!meshId || !expiresAt) return;
-    
-    // 만료 30초 전 계산
-    const now = Math.floor(Date.now() / 1000);
-    const timeUntilRefresh = (expiresAt - 30) - now;
-    
-    // 이미 갱신 시점이 지났다면? 바로 갱신 시도하거나 이미 만료
-    const timeoutMs = Math.max(0, timeUntilRefresh * 1000);
+  const refreshSignedUrl = async (id: string) => {
+    const data = await getSignedUrl(id);
+    setModelUrl(data.glb_url || data.signed_url);
+    setExpiresAt(data.expires_at);
+    toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
+  };
 
-    let refreshTimeout: number | null = null;
-    let refreshAttempted = false;
+  const handleRefreshError = (errorMsg: string) => {
+    console.error("Failed to refresh signed URL", errorMsg);
+    toast.error("모델 보안 링크가 만료되었습니다. 페이지를 새로고침하거나 다시 로드해주세요.");
+  };
 
-    const refreshSignedUrl = async () => {
-      if (refreshAttempted) return;
-      refreshAttempted = true;
-      try {
-        const { getSignedUrl } = await import('./api/medicalApi');
-        const data = await getSignedUrl(meshId);
-        setModelUrl(data.glb_url || data.signed_url);
-        setExpiresAt(data.expires_at);
-        toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
-      } catch (err) {
-        console.error("Failed to refresh signed URL", err);
-        toast.error("모델 보안 링크가 만료되었습니다. 페이지를 새로고침하거나 다시 로드해주세요.");
-      }
-    };
-
-    if (timeoutMs > 0) {
-      refreshTimeout = window.setTimeout(refreshSignedUrl, timeoutMs);
-    } else if (timeUntilRefresh <= 0 && expiresAt > now) {
-      // 곧 만료되는데 timeout이 음수면 바로 갱신
-      refreshSignedUrl();
-    }
-
-    return () => {
-      if (refreshTimeout) window.clearTimeout(refreshTimeout);
-    };
-  }, [meshId, expiresAt, setModelUrl, setExpiresAt]);
+  const { handleLoadFailure } = useSignedUrlRefresh({
+    meshId,
+    expiresAt,
+    onRefresh: refreshSignedUrl,
+    onError: handleRefreshError,
+  });
 
   // 1. .npy 파일 업로드 및 변환 Mutation
   const uploadMutation = useMutation({
@@ -190,8 +171,7 @@ function MainApp() {
         return
       }
       
-      const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/api/v1'
-      const wsUrl = `${wsBase}/triage/stream`
+      const wsUrl = getWebSocketUrl()
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
@@ -524,7 +504,7 @@ function MainApp() {
         </aside>
 
         <section className="viewer-container">
-          <ThreeViewer />
+          <ThreeViewer onLoadFailure={handleLoadFailure} />
         </section>
       </main>
 

@@ -8,20 +8,33 @@ export const medicalApi = axios.create({
 });
 
 medicalApi.interceptors.request.use(async (config) => {
-  // Prevent token from leaking to external URLs
   const requestUrl = config.url || '';
-  if (requestUrl.startsWith('http://') || requestUrl.startsWith('https://')) {
-    const base = new URL(API_BASE_URL);
-    const target = new URL(requestUrl);
-    if (target.origin !== base.origin) {
-      throw new Error('Blocked: medicalApi must not make requests to external URLs.');
-    }
+  const baseURL = config.baseURL || API_BASE_URL;
+
+  let targetUrl: URL;
+  try {
+    // Safely parse URL relative to window.location.origin for relative API_BASE_URL
+    const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const base = new URL(baseURL, baseOrigin);
+    targetUrl = new URL(requestUrl, base);
+  } catch (e) {
+    throw new Error('Blocked: Invalid URL construction.');
+  }
+
+  // Determine allowed origin
+  const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+  const allowedOrigin = new URL(API_BASE_URL, baseOrigin).origin;
+
+  if (targetUrl.origin !== allowedOrigin && targetUrl.origin !== baseOrigin) {
+    throw new Error('Blocked: medicalApi must not make requests to external URLs.');
   }
 
   const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  if (!session?.access_token) {
+    throw new Error('Authentication required. Please log in again.');
   }
+
+  config.headers.Authorization = `Bearer ${session.access_token}`;
   return config;
 });
 
@@ -78,10 +91,6 @@ export const getSignedUrl = async (mesh_id: string): Promise<{ signed_url: strin
 };
 
 export const uploadVitals = async (file: File): Promise<any> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    throw new Error("Authentication required. Please log in again.");
-  }
   const formData = new FormData();
   formData.append('file', file);
   const response = await medicalApi.post('/upload-vitals', formData, {

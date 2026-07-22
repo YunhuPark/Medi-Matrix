@@ -287,29 +287,22 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.close(code=4401)
             return
         csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv"))
-        print(f"[DEBUG] csv_path: {csv_path}, exists: {os.path.exists(csv_path)}")
         if not os.path.exists(csv_path):
             await websocket.send_json({"status": "error", "message": "실제 환자 CSV 데이터가 업로드되지 않았습니다."})
             await websocket.close()
             return
             
         try:
-            print("[DEBUG] Importing mamba_inference")
             from .mamba_inference import MambaSystemicPredictor
             mamba_predictor = MambaSystemicPredictor()
-            print("[DEBUG] Mamba predictor initialized")
-        except Exception as e:
-            print(f"[DEBUG] Exception during Mamba init: {e}")
-            await websocket.close(code=4401)
+        except Exception:
+            await websocket.close(code=1011)
             return
 
-        print("[DEBUG] Opening CSV file")
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                print(f"[DEBUG] Read row, sleeping 1s")
                 await asyncio.sleep(1.0)
-                print(f"[DEBUG] Woke up from sleep")
                 
                 # Check JWT Expiration during stream
                 if time.time() >= exp:
@@ -331,9 +324,7 @@ async def triage_websocket_stream(websocket: WebSocket):
                     "resp": resp, "temp": temp, "spo2": spo2
                 }
 
-                print(f"[DEBUG] Calling mamba_predictor.predict")
                 probs = mamba_predictor.predict([row])
-                print(f"[DEBUG] Predict returned: {probs}")
 
                 # Volume을 추가 피처로 활용 (Multi-modal 앙상블)
                 volume_factor = min(volume / 20000.0, 0.5)
@@ -385,11 +376,8 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.send_json({"status": "completed"})
 
     except WebSocketDisconnect:
-        print("[WebSocket] Client disconnected from streaming.")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[WebSocket] Error during streaming: {e}")
+        pass
+    except Exception:
         try:
             await websocket.close(code=1011)
         except RuntimeError:

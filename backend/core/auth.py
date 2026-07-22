@@ -1,6 +1,10 @@
 import os
 import uuid
 import httpx
+import base64
+import json
+import math
+import time
 from fastapi import Request, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -62,9 +66,6 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid user data received from Auth service.")
 
-import base64
-import json
-
 def decode_verified_token_exp(token: str) -> int | None:
     parts = token.split(".")
     if len(parts) != 3:
@@ -75,10 +76,8 @@ def decode_verified_token_exp(token: str) -> int | None:
         exp = jwt_payload.get("exp")
         if not isinstance(exp, (int, float)):
             return None
-        import math
         if math.isnan(exp) or math.isinf(exp):
             return None
-        import time
         if exp < int(time.time()):
             return None
         return int(exp)
