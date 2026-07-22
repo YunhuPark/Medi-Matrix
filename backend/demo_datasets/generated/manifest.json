@@ -1,0 +1,45 @@
+{
+  "seed": 42,
+  "description": "100% Synthetic Demo Dataset for Competition",
+  "files": {
+    "synthetic_vitals_stable.csv": {
+      "sha256": "dac32ddf5e251d60e9ca9db742160ee650e11fe530e69afeeae56cfd6d307e69",
+      "size_bytes": 3766,
+      "shape": "100 rows, 6 cols",
+      "dtype": "float/string"
+    },
+    "synthetic_vitals_warning.csv": {
+      "sha256": "041d670abb73156604334048201fe978019d601bd472b7fa07452ef6872582dc",
+      "size_bytes": 3774,
+      "shape": "100 rows, 6 cols",
+      "dtype": "float/string"
+    },
+    "synthetic_vitals_critical.csv": {
+      "sha256": "ccee1e38086160f1c07df55339cf00127069411610d0a0f2edd45da048131ba6",
+      "size_bytes": 3769,
+      "shape": "100 rows, 6 cols",
+      "dtype": "float/string"
+    },
+    "synthetic_brain_volume.nii.gz": {
+      "sha256": "8e4c7f1a7a5bd14a9407f9ce26d5ed7d8f7be4be4cd08f966c67ec0e6e7bf274",
+      "size_bytes": 912394,
+      "shape": [
+        64,
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "synthetic_lesion_mask.npy": {
+      "sha256": "f4d6de20ad79e04c9b0a61e314a126125d9ec0fb089b3f18da83d2f467e810b3",
+      "size_bytes": 262272,
+      "shape": [
+        64,
+        64,
+        64
+      ],
+      "dtype": "uint8"
+    }
+  },
+  "total_size_bytes": 1185975
+}

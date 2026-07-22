@@ -1,0 +1,31 @@
+{
+  "dataset": "Medi-Matrix Synthetic Judge Dataset",
+  "version": "1.0",
+  "metadata": {
+    "simulator": true,
+    "clinical_validation": false,
+    "diagnostic_use": false
+  },
+  "scenarios": {
+    "synthetic_vitals_stable.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "stable (stage 1)",
+      "description": "정상 범위의 기저값을 가지며 시스템이 안정적으로 처리하는지 확인하는 기본 시나리오"
+    },
+    "synthetic_vitals_warning.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "warning (stage 2)",
+      "description": "경미한 이상치를 포함하며 시스템이 위험성을 인지하는지 시뮬레이션"
+    },
+    "synthetic_vitals_critical.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "critical (stage 3)",
+      "description": "심각한 활력 징후 편차를 보이며 가장 높은 우선순위 경고를 발생시키는지 시뮬레이션"
+    },
+    "synthetic_brain_volume.nii.gz": {
+      "expected_upload_success": true,
+      "expected_mesh_generation": true,
+      "description": "3D 볼륨 업로드 시 시스템 검증 통과 여부 및 기본 메쉬 파이프라인 작동 여부 시뮬레이션"
+    }
+  }
+}

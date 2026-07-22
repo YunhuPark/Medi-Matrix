@@ -33,6 +33,25 @@
 
 ---
 
+## 📂 공모전 데모 데이터 (Synthetic Demo Datasets)
+
+이 프로젝트는 심사 및 시연을 위해 **100% 코드로 생성된 합성 데이터(Synthetic Data)**를 제공합니다. 
+> **주의**: 실제 환자 데이터는 절대로 업로드하지 마십시오. 본 데이터는 임상 진단용이 아닙니다.
+
+### 데이터 생성 및 사용 방법
+1. **생성 명령**:
+   ```bash
+   cd backend
+   python scripts/generate_demo_data.py
+   ```
+2. **제공되는 시나리오**:
+   - **생체신호 (Vitals)**: `synthetic_vitals_stable.csv`, `synthetic_vitals_warning.csv`, `synthetic_vitals_critical.csv` 3가지 위험도 단계를 시뮬레이션합니다.
+   - **3D 영상**: `synthetic_brain_volume.nii.gz` (수학적 모델로 합성된 3D 팬텀 볼륨)
+
+생성된 파일은 `backend/demo_datasets/generated/` 디렉터리에서 확인할 수 있으며, 이 데이터를 프론트엔드 UI를 통해 업로드하여 Triage 분석 흐름을 안전하게 테스트할 수 있습니다.
+
+---
+
 ## 🏗️ 아키텍처 (Architecture)
 
 ```text
