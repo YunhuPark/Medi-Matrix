@@ -170,7 +170,7 @@ async def upload_vitals(
             try:
                 os.remove(tmp_name)
             except Exception:
-                print("[Cleanup Error] Failed to remove temporary vitals file.")
+                pass
 
     return {"message": "Vitals CSV uploaded successfully"}
 
@@ -431,14 +431,14 @@ async def process_medical_mri(
                     tmp.write(contents)
                     tmp_path = tmp.name
 
-                print("[Router] Received Raw MRI. Sending to AI Inference Service...")
+
 
                 # --- [핵심] PyTorch 3D UNet 추론 파이프라인 ---
                 mask_data, heatmap_data = inference_service.predict(tmp_path)
 
             else:
                 # 호환성을 위해 기존 .npy 지원 유지 (이미 마스크인 경우)
-                print("[Router] Received pre-segmented .npy mask. Bypassing inference.")
+
                 mask_data = np.load(io.BytesIO(contents), allow_pickle=False)
 
                 if mask_data.dtype.hasobject:
@@ -454,9 +454,7 @@ async def process_medical_mri(
 
                 heatmap_data = mask_data # Fallback
 
-            # 디버그 로그
-            print(f"[Router] Segmentation Mask -> shape: {mask_data.shape}, dtype: {mask_data.dtype}, "
-                  f"range: [{mask_data.min():.4f}, {mask_data.max():.4f}]")
+
 
             # 2. Marching Cubes를 통한 메쉬 생성 (GLB)
             glb_file_path = create_mesh_from_mask(mask_data, threshold=0.5, heatmap_data=heatmap_data)
@@ -490,7 +488,7 @@ async def process_medical_mri(
                 expires_in=expires_in
             )
 
-            print("[Router] [OK] Success -> Mesh generated and uploaded.")
+
             
             from fastapi.responses import JSONResponse
             return JSONResponse(
@@ -512,12 +510,12 @@ async def process_medical_mri(
                 try:
                     os.remove(tmp_path)
                 except Exception:
-                    print("[Cleanup Error] Failed to remove temporary file.")
+                    pass
             if glb_file_path and os.path.exists(glb_file_path):
                 try:
                     os.remove(glb_file_path)
                 except Exception:
-                    print("[Cleanup Error] Failed to remove temporary mesh file.")
+                    pass
 
     except HTTPException:
         raise

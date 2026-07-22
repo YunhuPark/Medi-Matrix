@@ -80,7 +80,7 @@ function MainApp() {
         toast.error('CSV 업로드 실패')
       }
     } catch (error) {
-      console.error(error)
+
       toast.error('백엔드 서버와 통신할 수 없습니다.')
     }
   }
@@ -100,8 +100,8 @@ function MainApp() {
     toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
   };
 
-  const handleRefreshError = (errorMsg: string) => {
-    console.error("Failed to refresh signed URL", errorMsg);
+  const handleRefreshError = (_errorMsg: string) => {
+
     toast.error("모델 보안 링크가 만료되었습니다. 페이지를 새로고침하거나 다시 로드해주세요.");
   };
 
@@ -133,7 +133,7 @@ function MainApp() {
       setAppStatus('RENDERED')
     },
     onError: (error: any, _variables, context) => {
-      console.error(error)
+
       setAppStatus('IDLE')
       toast.error(
         error.response?.data?.detail || error.message || '업로드 중 오류가 발생했습니다.', 
@@ -224,8 +224,8 @@ function MainApp() {
         setIsStreaming(false)
       }
       
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error)
+      ws.onerror = (_error) => {
+
         toast.error("WebSocket 연결 중 오류가 발생했습니다.")
         setIsStreaming(false)
       }
