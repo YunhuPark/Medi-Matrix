@@ -34,6 +34,17 @@ def mock_env_vars():
     }):
         yield
 
+from core.rate_limit import upload_vitals_limiter, process_mri_limiter, triage_send_limiter, signed_url_limiter, websocket_limiter
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    upload_vitals_limiter.history.clear()
+    process_mri_limiter.history.clear()
+    triage_send_limiter.history.clear()
+    signed_url_limiter.history.clear()
+    websocket_limiter.history.clear()
+    yield
+
 @pytest.fixture
 def mock_auth():
     with patch("httpx.AsyncClient.get") as mock_get:
@@ -75,6 +86,9 @@ def mock_mesh_processor():
         tmp.close()
         m.return_value = tmp.name
         yield m
+        import os
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
         import os
         if os.path.exists(tmp.name):
             os.remove(tmp.name)
@@ -293,20 +307,6 @@ def test_triage_connection_failure(mock_auth, auth_headers):
         )
         assert response.status_code == 503
 
-def test_vitals_atomic_replace_and_cleanup(mock_auth, auth_headers):
-    valid_csv = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98\n"
-    with patch("os.replace") as mock_replace:
-        response = client.post(
-            "/api/v1/upload-vitals",
-            files={"file": ("test.csv", valid_csv, "text/csv")},
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        mock_replace.assert_called_once()
-        args = mock_replace.call_args[0]
-        assert "vitals.csv" in args[1]
-        assert valid_uuid in args[1] # check if user id path isolated
-
 def test_signed_url_success(mock_auth, mock_supabase_client, auth_headers):
     mid = str(uuid.uuid4())
     res = client.get(f"/api/v1/meshes/{mid}/signed-url", headers=auth_headers)
@@ -361,18 +361,16 @@ def reset_rate_limiters():
     yield
 
 @patch("api.router.httpx.AsyncClient")
-def test_ws_valid_auth(mock_client_class):
+@patch("services.supabase_client.download_user_vitals")
+def test_ws_valid_auth(mock_download, mock_client_class):
+    mock_download.return_value = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98"
     mock_client = AsyncMock()
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"id": valid_uuid}
     mock_client.get.return_value = mock_resp
     mock_client_class.return_value.__aenter__.return_value = mock_client
-    
-    csv_path = os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv")
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    with open(csv_path, "w", encoding="utf-8") as f:
-        f.write("hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98")
+
         
     try:
         with patch.dict(os.environ, {"ALLOWED_ORIGINS": "", "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
@@ -391,9 +389,8 @@ def test_ws_valid_auth(mock_client_class):
                     data = websocket.receive_json()
                     assert data["status"] == "streaming"
                     websocket.close()
-    finally:
-        if os.path.exists(csv_path):
-            os.remove(csv_path)
+    except Exception as e:
+        raise e
 
 @patch("api.router.httpx.AsyncClient")
 def test_ws_jwt_missing_exp(mock_client_class):

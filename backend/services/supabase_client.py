@@ -47,4 +47,41 @@ def upload_file_to_supabase(bucket_name: str, file_path: str, destination_path: 
             supabase.storage.from_(bucket_name).remove([destination_path])
         except Exception:
             pass
-        raise HTTPException(status_code=502, detail="Failed to create signed URL.")
+        raise HTTPException(status_code=502, detail="Storage service error.")
+def upload_user_vitals(user_id: str, csv_bytes: bytes) -> None:
+    """
+    환자의 Vitals CSV 데이터를 Supabase Storage에 업로드 (덮어쓰기) 합니다.
+    """
+    supabase = get_supabase_client()
+    bucket_name = os.environ.get("SUPABASE_VITALS_BUCKET", "medical-vitals")
+    destination_path = f"{user_id}/latest.csv"
+    
+    try:
+        supabase.storage.from_(bucket_name).upload(
+            file=csv_bytes,
+            path=destination_path,
+            file_options={
+                "cacheControl": "0",
+                "upsert": "true",
+                "contentType": "text/csv"
+            }
+        )
+    except Exception as e:
+        # Hide original exception detail for security
+        raise HTTPException(status_code=502, detail="Storage upload failed.")
+
+def download_user_vitals(user_id: str) -> bytes:
+    """
+    환자의 최신 Vitals CSV 데이터를 메모리로 다운로드하여 bytes 반환합니다.
+    """
+    supabase = get_supabase_client()
+    bucket_name = os.environ.get("SUPABASE_VITALS_BUCKET", "medical-vitals")
+    source_path = f"{user_id}/latest.csv"
+    
+    try:
+        response = supabase.storage.from_(bucket_name).download(source_path)
+        if not response:
+            raise ValueError("Empty response")
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Vitals data not found or storage error.")

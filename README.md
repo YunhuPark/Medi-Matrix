@@ -115,3 +115,21 @@ cd backend
 pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+
+## Render 배포 (백엔드)
+
+본 저장소는 백엔드(FastAPI)와 프론트엔드(React/Vite)가 분리 배포되는 구조입니다. 프론트엔드는 Vercel에, 백엔드는 Render에 배포할 수 있습니다.
+
+### Demo 모드와 Model 모드
+- **Demo 모드**: INFERENCE_MODE=demo (기본값). 임상 진단 모델을 사용하지 않고 시뮬레이터를 통해 결정론적 결과를 보여줍니다. PyTorch를 설치하거나 메모리에 적재하지 않아 Render Free (512MB RAM)에서도 배포 테스트가 가능합니다.
+- **Model 모드**: INFERENCE_MODE=model. 실제 PyTorch 모델(UNet3D, Mamba)을 로드합니다. Render Free에서는 Out of Memory (OOM)로 서버가 다운될 수 있으므로 **최소 2GB 이상의 유료 인스턴스(Standard)**를 권장합니다. Docker 빌드 시 INSTALL_ML=true 옵션이 필요합니다.
+
+### Supabase 스토리지
+- medical-meshes: 3D 모델(GLB) 파일 저장
+- medical-vitals: 환자 시계열 데이터(CSV) 임시 저장 (로컬 파일 시스템 의존성 제거를 위해 필수)
+
+### 환경 변수 안내
+백엔드 배포 플랫폼(Render) 설정에 다음 환경변수를 등록해야 합니다:
+- APP_ENV=production`n- INFERENCE_MODE=demo (실제 운영 시 model 변경 후 재빌드)
+- SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY`n- SUPABASE_STORAGE_BUCKET=medical-meshes`n- SUPABASE_VITALS_BUCKET=medical-vitals`n- ALLOWED_ORIGINS=https://내프론트엔드도메인.vercel.app`n

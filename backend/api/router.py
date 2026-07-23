@@ -150,27 +150,19 @@ async def upload_vitals(
     if not valid_rows:
         raise HTTPException(status_code=400, detail="CSV file has no data rows.")
 
-    file_path = os.path.join(os.path.dirname(__file__), f"../data/users/{current_user.user_id}/vitals.csv")
-    dir_name = os.path.dirname(file_path)
-    os.makedirs(dir_name, exist_ok=True)
-    
-    import tempfile
-    with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, newline="", encoding="utf-8") as tmp:
-        writer = csv.DictWriter(tmp, fieldnames=reader.fieldnames)
+    try:
+        from services.supabase_client import upload_user_vitals
+        # csv DictWriter to bytes
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=reader.fieldnames)
         writer.writeheader()
         writer.writerows(valid_rows)
-        tmp_name = tmp.name
-
-    try:
-        os.replace(tmp_name, file_path)
+        csv_bytes = csv_buffer.getvalue().encode('utf-8')
+        upload_user_vitals(current_user.user_id, csv_bytes)
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save vitals data.")
-    finally:
-        if os.path.exists(tmp_name):
-            try:
-                os.remove(tmp_name)
-            except Exception:
-                pass
 
     return {"message": "Vitals CSV uploaded successfully"}
 
@@ -286,8 +278,10 @@ async def triage_websocket_stream(websocket: WebSocket):
         except (TypeError, ValueError):
             await websocket.close(code=4401)
             return
-        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../data/users/{valid_uuid}/vitals.csv"))
-        if not os.path.exists(csv_path):
+        from services.supabase_client import download_user_vitals
+        try:
+            csv_bytes = download_user_vitals(valid_uuid)
+        except Exception:
             await websocket.send_json({"status": "error", "message": "실제 환자 CSV 데이터가 업로드되지 않았습니다."})
             await websocket.close()
             return
@@ -299,81 +293,82 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.close(code=1011)
             return
 
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                await asyncio.sleep(1.0)
-                
-                # Check JWT Expiration during stream
-                if time.time() >= exp:
-                    await websocket.close(code=4401)
-                    return
+        import io
+        csv_text = csv_bytes.decode('utf-8')
+        reader = csv.DictReader(io.StringIO(csv_text))
+        for row in reader:
+            await asyncio.sleep(1.0)
+            
+            # Check JWT Expiration during stream
+            if time.time() >= exp:
+                await websocket.close(code=4401)
+                return
 
-                try:
-                    hr = float(row.get("hr", 0))
-                    bp_sys = float(row.get("bpSys", 0))
-                    bp_dia = float(row.get("bpDia", 0))
-                    resp = float(row.get("resp", 0))
-                    temp = float(row.get("temp", 0))
-                    spo2 = float(row.get("spo2", 0))
-                except ValueError:
-                    continue
+            try:
+                hr = float(row.get("hr", 0))
+                bp_sys = float(row.get("bpSys", 0))
+                bp_dia = float(row.get("bpDia", 0))
+                resp = float(row.get("resp", 0))
+                temp = float(row.get("temp", 0))
+                spo2 = float(row.get("spo2", 0))
+            except ValueError:
+                continue
 
                 window_data = {
                     "hr": hr, "bp_sys": bp_sys, "bp_dia": bp_dia,
                     "resp": resp, "temp": temp, "spo2": spo2
                 }
 
-                probs = mamba_predictor.predict([row])
+            probs = mamba_predictor.predict([row])
 
-                # Volume을 추가 피처로 활용 (Multi-modal 앙상블)
-                volume_factor = min(volume / 20000.0, 0.5)
+            # Volume을 추가 피처로 활용 (Multi-modal 앙상블)
+            volume_factor = min(volume / 20000.0, 0.5)
 
-                # 각 병증별 최종 확률 계산 (Volume factor 보정)
-                final_sepsis = min(probs["sepsis"] + volume_factor, 1.0)
-                final_ards = min(probs["ards"] + volume_factor, 1.0)
-                final_shock = min(probs["shock"] + volume_factor, 1.0)
+            # 각 병증별 최종 확률 계산 (Volume factor 보정)
+            final_sepsis = min(probs["sepsis"] + volume_factor, 1.0)
+            final_ards = min(probs["ards"] + volume_factor, 1.0)
+            final_shock = min(probs["shock"] + volume_factor, 1.0)
 
-                max_prob = max(final_sepsis, final_ards, final_shock)
+            max_prob = max(final_sepsis, final_ards, final_shock)
 
-                # 어떤 병증이 가장 높은 위험도를 갖는지 식별
-                triggering_condition = "Unknown"
-                if max_prob == final_sepsis: triggering_condition = "패혈증 (Sepsis)"
-                elif max_prob == final_ards: triggering_condition = "급성 호흡곤란 증후군 (ARDS)"
-                elif max_prob == final_shock: triggering_condition = "저혈량성 쇼크 (Hypovolemic Shock)"
+            # 어떤 병증이 가장 높은 위험도를 갖는지 식별
+            triggering_condition = "Unknown"
+            if max_prob == final_sepsis: triggering_condition = "패혈증 (Sepsis)"
+            elif max_prob == final_ards: triggering_condition = "급성 호흡곤란 증후군 (ARDS)"
+            elif max_prob == final_shock: triggering_condition = "저혈량성 쇼크 (Hypovolemic Shock)"
 
-                # 확률에 따른 Triage 결정
-                if max_prob > 0.8:
-                    triage_level = f"RED (초응급 - {triggering_condition} 위험)"
-                elif max_prob > 0.5:
-                    triage_level = "YELLOW (응급 - 집중 모니터링)"
-                else:
-                    triage_level = "GREEN (안정 - 일반 병동 관찰)"
+            # 확률에 따른 Triage 결정
+            if max_prob > 0.8:
+                triage_level = f"RED (초응급 - {triggering_condition} 위험)"
+            elif max_prob > 0.5:
+                triage_level = "YELLOW (응급 - 집중 모니터링)"
+            else:
+                triage_level = "GREEN (안정 - 일반 병동 관찰)"
 
-                # 4. 실시간 결과 및 진짜 생체 데이터 스트리밍 전송
-                response_payload = {
-                    "status": "streaming",
-                    "vitals": {
-                        "hr": hr,
-                        "bp_sys": bp_sys,
-                        "bp_dia": bp_dia,
-                        "resp": resp,
-                        "temp": temp,
-                        "spo2": spo2
-                    },
-                    "disease_risks": {
-                        "sepsis": f"{(final_sepsis * 100):.1f}%",
-                        "ards": f"{(final_ards * 100):.1f}%",
-                        "shock": f"{(final_shock * 100):.1f}%"
-                    },
-                    "triggering_condition": triggering_condition if max_prob > 0.8 else None,
-                    "triage_level": triage_level
-                }
+            # 4. 실시간 결과 및 진짜 생체 데이터 스트리밍 전송
+            response_payload = {
+                "status": "streaming",
+                "vitals": {
+                    "hr": hr,
+                    "bp_sys": bp_sys,
+                    "bp_dia": bp_dia,
+                    "resp": resp,
+                    "temp": temp,
+                    "spo2": spo2
+                },
+                "disease_risks": {
+                    "sepsis": f"{(final_sepsis * 100):.1f}%",
+                    "ards": f"{(final_ards * 100):.1f}%",
+                    "shock": f"{(final_shock * 100):.1f}%"
+                },
+                "triggering_condition": triggering_condition if max_prob > 0.8 else None,
+                "triage_level": triage_level
+            }
 
-                await websocket.send_json(response_payload)
+            await websocket.send_json(response_payload)
 
-            # CSV 끝 도달 시
-            await websocket.send_json({"status": "completed"})
+        # CSV 끝 도달 시
+        await websocket.send_json({"status": "completed"})
 
     except WebSocketDisconnect:
         pass

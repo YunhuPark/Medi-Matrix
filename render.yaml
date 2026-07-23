@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: medi-matrix-backend
+    env: docker
+    plan: free
+    region: oregon # Default to US West or leave out, render auto-assigns.
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/live
+    autoDeploy: false # Prevent accidental auto-deploys from main if testing
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: INFERENCE_MODE
+        value: demo
+      - key: SUPABASE_STORAGE_BUCKET
+        value: medical-meshes
+      - key: SUPABASE_VITALS_BUCKET
+        value: medical-vitals
+      - key: ALLOWED_ORIGINS
+        sync: false # Set manually in dashboard
+      - key: SUPABASE_URL
+        sync: false # Set manually in dashboard
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false # Set manually in dashboard
+      - key: SUPABASE_SECRET_KEY
+        sync: false # Set manually in dashboard
