@@ -13,17 +13,17 @@ def mock_env():
 def test_upload_user_vitals_success(mock_create_client, mock_env):
     mock_supabase = MagicMock()
     mock_create_client.return_value = mock_supabase
-    
+
     mock_storage = MagicMock()
     mock_supabase.storage.from_.return_value = mock_storage
     mock_storage.upload.return_value = {"signedURL": "mock"} # Doesn't matter as long as it's not raising and not returning error dict
-    
+
     # Valid UUID
     valid_uuid = "12345678-1234-5678-1234-567812345678"
-    
+
     # Should not raise any exception
     upload_user_vitals(valid_uuid, b"test,csv,data")
-    
+
     # Verify the call
     mock_storage.upload.assert_called_once_with(
         path=f"{valid_uuid}/latest.csv",
@@ -39,17 +39,17 @@ def test_upload_user_vitals_success(mock_create_client, mock_env):
 def test_upload_user_vitals_error_dict(mock_create_client, mock_env):
     mock_supabase = MagicMock()
     mock_create_client.return_value = mock_supabase
-    
+
     mock_storage = MagicMock()
     mock_supabase.storage.from_.return_value = mock_storage
     # Simulate older storage3 response
     mock_storage.upload.return_value = {"error": "Unauthorized", "statusCode": 403}
-    
+
     valid_uuid = "12345678-1234-5678-1234-567812345678"
-    
+
     with pytest.raises(HTTPException) as excinfo:
         upload_user_vitals(valid_uuid, b"test,csv,data")
-        
+
     assert excinfo.value.status_code == 502
     assert excinfo.value.detail == "Storage upload failed."
 
@@ -57,16 +57,27 @@ def test_upload_user_vitals_error_dict(mock_create_client, mock_env):
 def test_upload_user_vitals_exception(mock_create_client, mock_env):
     mock_supabase = MagicMock()
     mock_create_client.return_value = mock_supabase
-    
+
     mock_storage = MagicMock()
     mock_supabase.storage.from_.return_value = mock_storage
     # Simulate newer storage3 raising exception
     mock_storage.upload.side_effect = Exception("Some SDK error")
-    
+
     valid_uuid = "12345678-1234-5678-1234-567812345678"
-    
+
     with pytest.raises(HTTPException) as excinfo:
         upload_user_vitals(valid_uuid, b"test,csv,data")
-        
+
     assert excinfo.value.status_code == 502
     assert excinfo.value.detail == "Storage upload failed."
+
+@patch("services.supabase_client.create_client")
+def test_get_supabase_client_exception(mock_create_client, mock_env):
+    # Simulate create_client raising SupabaseException
+    mock_create_client.side_effect = Exception("SupabaseException: invalid url")
+
+    with pytest.raises(HTTPException) as excinfo:
+        get_supabase_client()
+
+    assert excinfo.value.status_code == 502
+    assert excinfo.value.detail == "Storage service unavailable."
