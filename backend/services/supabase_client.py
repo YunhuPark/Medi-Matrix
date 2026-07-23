@@ -48,13 +48,23 @@ def upload_file_to_supabase(bucket_name: str, file_path: str, destination_path: 
         except Exception:
             pass
         raise HTTPException(status_code=502, detail="Storage service error.")
+import uuid
+
+def validate_user_uuid(user_id: str) -> str:
+    try:
+        val = uuid.UUID(user_id)
+        return str(val)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format.")
+
 def upload_user_vitals(user_id: str, csv_bytes: bytes) -> None:
     """
     환자의 Vitals CSV 데이터를 Supabase Storage에 업로드 (덮어쓰기) 합니다.
     """
+    valid_uuid = validate_user_uuid(user_id)
     supabase = get_supabase_client()
     bucket_name = os.environ.get("SUPABASE_VITALS_BUCKET", "medical-vitals")
-    destination_path = f"{user_id}/latest.csv"
+    destination_path = f"{valid_uuid}/latest.csv"
     
     try:
         supabase.storage.from_(bucket_name).upload(
@@ -74,9 +84,10 @@ def download_user_vitals(user_id: str) -> bytes:
     """
     환자의 최신 Vitals CSV 데이터를 메모리로 다운로드하여 bytes 반환합니다.
     """
+    valid_uuid = validate_user_uuid(user_id)
     supabase = get_supabase_client()
     bucket_name = os.environ.get("SUPABASE_VITALS_BUCKET", "medical-vitals")
-    source_path = f"{user_id}/latest.csv"
+    source_path = f"{valid_uuid}/latest.csv"
     
     try:
         response = supabase.storage.from_(bucket_name).download(source_path)

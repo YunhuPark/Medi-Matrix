@@ -64,7 +64,7 @@ class MedicalInferenceService:
         return mask
 
     def predict(self, nifti_path: str) -> Tuple[np.ndarray, np.ndarray]:
-        print(f"[AI Service] Loading MRI file: {nifti_path}")
+        print("[AI Service] Loading MRI file...")
         img = nib.load(nifti_path)
         data = img.get_fdata()
         
@@ -85,8 +85,8 @@ class MedicalInferenceService:
                     downsampled_output = self.model(downsampled_input)
                     output_tensor = torch.nn.functional.interpolate(downsampled_output, size=original_size, mode='trilinear', align_corners=False)
                     print("[AI Service] Neural Network Pass Completed.")
-                except Exception as e:
-                    print(f"[AI Service] Inference warning: {str(e)}")
+                except Exception:
+                    print("[AI Service] Inference warning: Inference failed.")
                     # 런타임 오류 시 Fail-closed 또는 안전한 빈 마스크 반환
                     output_tensor = torch.zeros_like(input_tensor)
                     

@@ -36,9 +36,7 @@ def create_mesh_from_mask(mask_data: np.ndarray, threshold: float = 0.5, heatmap
     # 1. 입력 배열 정규화 (4D → 3D 등)
     mask_data = _normalize_mask(mask_data)
     
-    print(f"[MeshProcessor] Input shape: {mask_data.shape}, "
-          f"value range: [{mask_data.min():.3f}, {mask_data.max():.3f}], "
-          f"voxels above threshold: {int(np.sum(mask_data >= threshold))}")
+    print("[MeshProcessor] Starting mesh generation...")
     
     # 마스크에 볼륨 데이터가 존재하는지 확인
     if np.sum(mask_data >= threshold) == 0:
@@ -50,7 +48,7 @@ def create_mesh_from_mask(mask_data: np.ndarray, threshold: float = 0.5, heatmap
     # 3. Marching Cubes 알고리즘으로 메쉬 추출
     verts, faces, normals, values = measure.marching_cubes(smoothed, level=threshold)
     
-    print(f"[MeshProcessor] Marching Cubes -> Vertices: {verts.shape[0]}, Faces: {faces.shape[0]}")
+    print("[MeshProcessor] Marching Cubes extraction completed.")
     
     # 4. Trimesh 객체 생성
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
@@ -104,7 +102,7 @@ def create_mesh_from_mask(mask_data: np.ndarray, threshold: float = 0.5, heatmap
         a = np.full_like(r, 255)
         
         vertex_colors = np.column_stack((r, g, b, a))
-        print(f"[MeshProcessor] Applied XAI Heatmap to vertex colors. Max confidence on surface: {probs.max():.3f}")
+        print("[MeshProcessor] Applied XAI Heatmap to vertex colors.")
     else:
         # 히트맵이 없으면 기존 파란색 단일 톤 적용
         vertex_colors = np.full((len(mesh.vertices), 4), [100, 160, 250, 255], dtype=np.uint8)
@@ -119,6 +117,6 @@ def create_mesh_from_mask(mask_data: np.ndarray, threshold: float = 0.5, heatmap
     mesh.export(output_path, file_type='glb')
     
     file_size = os.path.getsize(output_path)
-    print(f"[MeshProcessor] [OK] GLB exported: {output_path} ({file_size:,} bytes)")
+    print("[MeshProcessor] [OK] GLB exported successfully.")
     
     return output_path

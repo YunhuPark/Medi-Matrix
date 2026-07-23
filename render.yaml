@@ -1,12 +1,12 @@
 services:
   - type: web
     name: medi-matrix-backend
-    env: docker
+    runtime: docker
     plan: free
-    region: oregon # Default to US West or leave out, render auto-assigns.
+    dockerContext: .
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health/live
-    autoDeploy: false # Prevent accidental auto-deploys from main if testing
+    autoDeployTrigger: off # Prevent accidental auto-deploys from main if testing
     envVars:
       - key: APP_ENV
         value: production
