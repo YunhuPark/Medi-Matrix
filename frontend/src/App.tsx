@@ -7,10 +7,10 @@ import { Toaster, toast } from 'sonner'
 import { processMedicalMask, uploadVitals } from './api/medicalApi'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
 import { AuthProvider, useAuth } from './auth/AuthProvider'
-import { AuthPage } from './components/auth/AuthPage'
 import { getWebSocketUrl } from './lib/websocketUrl'
 import { useSignedUrlRefresh } from './hooks/useSignedUrlRefresh'
 import { getSignedUrl } from './api/medicalApi'
+import { ensureDemoSession, DemoSessionError } from './auth/demoSession'
 import './App.css'
 
 function MainApp() {
@@ -26,7 +26,7 @@ function MainApp() {
     resetMedicalState,
   } = useViewerStore()
   
-  const { signOut, getAccessToken } = useAuth()
+  const { signOut } = useAuth()
 
   const handleSignOut = async () => {
     resetMedicalState()
@@ -34,7 +34,14 @@ function MainApp() {
       wsRef.current.close()
       wsRef.current = null
     }
+    setTriageLevel(null)
+    setDiseaseRisks(null)
+    setTriggeringCondition(null)
+    setIsStreaming(false)
+    setHasVitalsFile(false)
+    setVitals({ hr: 80, bpSys: 120, bpDia: 80, resp: 16, temp: 36.5, spo2: 98 })
     await signOut()
+    toast.success('데모 세션 및 상태가 초기화되었습니다.')
   }
   
   const [triageLevel, setTriageLevel] = useState<string | null>(null)
@@ -70,6 +77,7 @@ function MainApp() {
     formData.append('file', file)
 
     try {
+      await ensureDemoSession()
       toast.info('CSV 업로드 중...')
       const response = await uploadVitals(file)
 
@@ -80,8 +88,11 @@ function MainApp() {
         toast.error('CSV 업로드 실패')
       }
     } catch (error) {
-
-      toast.error('백엔드 서버와 통신할 수 없습니다.')
+      if (error instanceof DemoSessionError) {
+        toast.error(error.message)
+      } else {
+        toast.error('백엔드 서버와 통신할 수 없습니다.')
+      }
     }
   }
 
@@ -94,10 +105,18 @@ function MainApp() {
   }, [])
 
   const refreshSignedUrl = async (id: string) => {
-    const data = await getSignedUrl(id);
-    setModelUrl(data.glb_url || data.signed_url);
-    setExpiresAt(data.expires_at);
-    toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
+    try {
+      await ensureDemoSession();
+      const data = await getSignedUrl(id);
+      setModelUrl(data.glb_url || data.signed_url);
+      setExpiresAt(data.expires_at);
+      toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
+    } catch (error) {
+      if (error instanceof DemoSessionError) {
+        toast.error(error.message);
+      }
+      throw error;
+    }
   };
 
   const handleRefreshError = (_errorMsg: string) => {
@@ -165,7 +184,19 @@ function MainApp() {
         return
       }
       
-      const accessToken = await getAccessToken()
+      let accessToken: string | null = null;
+      try {
+        const session = await ensureDemoSession();
+        accessToken = session.access_token;
+      } catch (error) {
+        if (error instanceof DemoSessionError) {
+          toast.error(error.message);
+        } else {
+          toast.error("인증 토큰을 준비할 수 없습니다.");
+        }
+        return;
+      }
+      
       if (!accessToken) {
         toast.error("인증 토큰이 만료되었습니다. 다시 로그인해주세요.")
         return
@@ -197,7 +228,6 @@ function MainApp() {
           toggleStreaming()
           return
         }
-
         if (data.vitals) {
           setVitals({
             hr: data.vitals.hr,
@@ -232,7 +262,7 @@ function MainApp() {
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -243,7 +273,17 @@ function MainApp() {
       return
     }
 
-    uploadMutation.mutate(file)
+    try {
+      await ensureDemoSession();
+      uploadMutation.mutate(file);
+    } catch (error) {
+      if (error instanceof DemoSessionError) {
+        toast.error(error.message);
+      } else {
+        toast.error("인증 토큰을 준비할 수 없습니다.");
+      }
+      event.target.value = '';
+    }
   }
 
   const getStatusColor = () => {
@@ -298,6 +338,10 @@ function MainApp() {
           <h1>Medical Image 3D Viewer</h1>
         </div>
         
+        <div style={{ margin: '0 auto', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
+          ⚠️ 공모전 심사용 합성 데이터 전용 데모입니다. 실제 환자 정보 및 식별 가능한 의료 데이터를 업로드하지 마세요.
+        </div>
+
         <div className="tabs">
           <button 
             className={`tab ${modality === 'Brain' ? 'active' : ''}`}
@@ -323,7 +367,7 @@ function MainApp() {
             style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }}
             onClick={handleSignOut}
           >
-            로그아웃
+            데모 세션 초기화
           </button>
         </div>
       </header>
@@ -522,16 +566,6 @@ function MainApp() {
 }
 
 function AppContent() {
-  const { session, loading } = useAuth();
-  
-  if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'white', backgroundColor: '#111827' }}>로딩 중...</div>;
-  }
-  
-  if (!session) {
-    return <AuthPage />;
-  }
-  
   return <MainApp />;
 }
 

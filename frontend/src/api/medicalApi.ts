@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { supabase } from '../lib/supabase';
+import { ensureDemoSession } from '../auth/demoSession';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -29,7 +29,13 @@ medicalApi.interceptors.request.use(async (config) => {
     throw new Error('Blocked: medicalApi must not make requests to external URLs.');
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
+  let session;
+  try {
+    session = await ensureDemoSession();
+  } catch (error) {
+    throw error;
+  }
+
   if (!session?.access_token) {
     throw new Error('Authentication required. Please log in again.');
   }

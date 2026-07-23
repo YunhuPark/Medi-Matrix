@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { medicalApi, processMedicalMask } from '../api/medicalApi';
-import { supabase } from '../lib/supabase';
+import { ensureDemoSession, DemoSessionError } from '../auth/demoSession';
 import axios from 'axios';
 
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: vi.fn(),
-    },
-  },
+vi.mock('../auth/demoSession', () => ({
+  ensureDemoSession: vi.fn(),
+  DemoSessionError: class extends Error {
+    constructor(message: string = 'DemoSessionError') {
+      super(message);
+      this.name = 'DemoSessionError';
+    }
+  }
 }));
 
 describe('medicalApi tests', () => {
@@ -30,15 +32,15 @@ describe('medicalApi tests', () => {
   });
 
   it('rejects missing session before making network requests', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null } });
+    (ensureDemoSession as any).mockRejectedValue(new DemoSessionError('Authentication required. Failed to acquire demo session.'));
 
-    await expect(processMedicalMask(new File([], 'test.npy'))).rejects.toThrow('Authentication required. Please log in again.');
+    await expect(processMedicalMask(new File([], 'test.npy'))).rejects.toThrow('Authentication required. Failed to acquire demo session.');
     
     expect(adapterMock).not.toHaveBeenCalled(); // 0 network calls
   });
 
   it('adds Authorization header when session exists', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: { access_token: 'fake-token' } } });
+    (ensureDemoSession as any).mockResolvedValue({ access_token: 'fake-token' });
 
     await processMedicalMask(new File([], 'test.npy'));
 
@@ -48,7 +50,7 @@ describe('medicalApi tests', () => {
   });
 
   it('rejects external absolute URLs to prevent token leak', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: { access_token: 'fake-token' } } });
+    (ensureDemoSession as any).mockResolvedValue({ access_token: 'fake-token' });
     
     await expect(medicalApi.get('https://evil.example.com/steal-token')).rejects.toThrow('Blocked: medicalApi must not make requests to external URLs.');
     
@@ -56,14 +58,14 @@ describe('medicalApi tests', () => {
   });
 
   it('rejects protocol-relative URLs (e.g. //evil.example.com)', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: { access_token: 'fake-token' } } });
+    (ensureDemoSession as any).mockResolvedValue({ access_token: 'fake-token' });
     
     await expect(medicalApi.get('//evil.example.com/steal-token')).rejects.toThrow('Blocked: medicalApi must not make requests to external URLs.');
     expect(adapterMock).not.toHaveBeenCalled();
   });
 
   it('allows relative paths based on API_BASE_URL', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: { access_token: 'fake-token' } } });
+    (ensureDemoSession as any).mockResolvedValue({ access_token: 'fake-token' });
 
     await medicalApi.get('/some-relative-path');
     
@@ -73,7 +75,7 @@ describe('medicalApi tests', () => {
   });
 
   it('does not leak Authorization into global axios', async () => {
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: { access_token: 'fake-token' } } });
+    (ensureDemoSession as any).mockResolvedValue({ access_token: 'fake-token' });
 
     // Make a successful medicalApi call
     await medicalApi.get('/safe-path');

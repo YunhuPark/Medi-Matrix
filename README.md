@@ -84,13 +84,32 @@
 ### Frontend
 - **Framework**: Node 24, React 18 (TypeScript), Vite
 - **3D Rendering**: Three.js, React Three Fiber, `drei`
-- **Auth**: Supabase Auth (JWT)
 
 ### Backend
 - **Framework**: Python 3.11, FastAPI, Uvicorn, WebSockets
 - **Medical/Data**: `nibabel`, `numpy`
 - **3D Processing**: `scikit-image` (Marching Cubes), `trimesh`
-- **Security**: Supabase Storage (Private)
+- **Security**: Supabase Auth (JWT), Storage (Private)
+- **Private Storage**: Supabase를 사용하여 사용자별(`.csv`, `.npy`) 파일 격리 보안 정책 적용 (1:1 격리)
+
+### 공모전 UX: Frictionless Authenticated Demo Session
+- 기본 공모전 UX는 로그인(이메일/비밀번호) 화면 없는 익명 인증 데모로 제공됩니다.
+- 익명 사용자도 Supabase JWT를 정식으로 발급받아 사용하므로 **백엔드의 인증, Private Storage 사용자 격리, Rate Limit을 절대 우회하지 않습니다.**
+- 이 익명 계정은 브라우저 저장소 초기화 시 복구할 수 없는 일회성 데모 세션으로 기능합니다.
+- **실제 환자 데이터 사용 금지**: 모든 시연은 합성 데모 데이터를 사용해야 합니다.
+- 공개 배포 시에는 CAPTCHA 및 일정 시간 지난 익명 사용자 정리 정책 도입을 권장합니다.
+
+## Deployment Status
+- **Frontend (Vercel)**: React 프론트엔드 배포 완료 (`https://[VERCEL_DOMAIN]`)
+- **Backend (Render)**: Docker Web Service 기반 배포 준비 완료 (`render.yaml` 포함)
+  - *참고*: 모델 로드 과정 등을 고려할 때 Render 인스턴스의 메모리가 최소 1GB~2GB 이상 필요할 수 있습니다.
+- **Storage (Supabase)**: Auth 및 Private Storage 적용 완료
+
+## Supabase Dashboard 필수 설정
+배포 시 다음 설정이 반드시 필요합니다:
+1. **Authentication > Providers**: `Anonymous Sign-Ins` 활성화
+2. **Storage**: `medical-vitals` 및 `medical-meshes` 버킷 생성
+3. **Storage Policies**: 사용자 식별자 기반 데이터 접근을 허용하는 RLS 및 파일 격리 정책 생성(Private)
 
 ---
 
