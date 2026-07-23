@@ -7,6 +7,7 @@ import hashlib
 import json
 import zipfile
 import shutil
+import sys
 
 def generate_vitals_csv(file_path: str, scenario: str, num_rows: int = 100, force: bool = False):
     if os.path.exists(file_path) and not force:
@@ -115,12 +116,13 @@ def compute_sha256(file_path: str):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Generate synthetic demo data for Medi-Matrix.")
     parser.add_argument('--force', action='store_true', help='Overwrite existing files.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
     parser.add_argument('--out-dir', type=str, default='../demo_datasets/generated', help='Output directory relative to script.')
     parser.add_argument('--artifact-dir', type=str, default='../../contest_artifacts', help='ZIP output directory relative to script.')
+    parser.add_argument('--template-dir', type=str, default='../demo_datasets/templates', help='Template directory relative to script.')
     parser.add_argument('--package', action='store_true', help='Create ZIP package for Google Drive distribution.')
     
     args = parser.parse_args()
@@ -132,7 +134,7 @@ def main():
     os.makedirs(base_dir, exist_ok=True)
     
     # Copy templates
-    templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../demo_datasets/templates'))
+    templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), args.template_dir))
     templates = ['README_FIRST.md', 'DATASET_CARD.md', 'expected_results.json']
     for t in templates:
         src = os.path.join(templates_dir, t)
@@ -248,10 +250,10 @@ def main():
                 missing_files.append(item)
                 
         if missing_files:
-            print(f"ERROR: Cannot create ZIP. Missing required files: {missing_files}")
+            print(f"ERROR: Cannot create ZIP. Missing required files: {missing_files}", file=sys.stderr)
             if os.path.exists(zip_path):
                 os.remove(zip_path)
-            sys.exit(1)
+            return 1
             
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for item in allow_list:
@@ -259,6 +261,8 @@ def main():
                 zipf.write(item_path, arcname=item)
                     
         print(f"Package created at: {zip_path}")
+    
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -105,12 +105,22 @@ def test_package_creation_strict(tmp_path):
     out_dir = tmp_path / "generated"
     artifact_dir = tmp_path / "artifacts"
     
+    # Copy real templates to a tmp template dir
+    import shutil
+    from pathlib import Path
+    template_dir = tmp_path / "templates"
+    template_dir.mkdir()
+    real_template_dir = Path(script_path).parent.parent / "demo_datasets/templates"
+    for t in ['README_FIRST.md', 'DATASET_CARD.md', 'expected_results.json']:
+        shutil.copy2(real_template_dir / t, template_dir / t)
+        
     env = os.environ.copy()
     result = subprocess.run([
         sys.executable, script_path, 
         "--force", "--package", 
         "--out-dir", str(out_dir),
-        "--artifact-dir", str(artifact_dir)
+        "--artifact-dir", str(artifact_dir),
+        "--template-dir", str(template_dir)
     ], capture_output=True, text=True, env=env)
     
     assert result.returncode == 0
@@ -171,26 +181,38 @@ def test_package_failure_missing_files(tmp_path):
     out_dir = tmp_path / "generated_fail"
     artifact_dir = tmp_path / "artifacts"
     
-    # We want to test if packaging fails when a file is missing.
-    # We rename a template temporarily so the script can't copy it to out_dir
+    import shutil
     from pathlib import Path
-    template_src = Path(script_path).parent.parent / "demo_datasets/templates/README_FIRST.md"
-    template_bak = template_src.with_suffix(".bak")
     
-    template_src.rename(template_bak)
-    try:
-        env = os.environ.copy()
-        result = subprocess.run([
-            sys.executable, script_path, 
-            "--package", 
-            "--out-dir", str(out_dir),
-            "--artifact-dir", str(artifact_dir)
-        ], capture_output=True, text=True, env=env)
-        
-        assert result.returncode == 1
-        assert "Missing required files" in result.stdout
-        
-        zip_path = artifact_dir / "Medi-Matrix_Contest_Demo.zip"
-        assert not zip_path.exists(), "Partial ZIP should be deleted on failure"
-    finally:
-        template_bak.rename(template_src)
+    # We want to test if packaging fails when a file is missing.
+    # Create tmp template dir and intentionally omit README_FIRST.md
+    template_dir = tmp_path / "templates"
+    template_dir.mkdir()
+    real_template_dir = Path(script_path).parent.parent / "demo_datasets/templates"
+    for t in ['DATASET_CARD.md', 'expected_results.json']:
+        shutil.copy2(real_template_dir / t, template_dir / t)
+    
+    env = os.environ.copy()
+    result = subprocess.run([
+        sys.executable, script_path, 
+        "--package", 
+        "--out-dir", str(out_dir),
+        "--artifact-dir", str(artifact_dir),
+        "--template-dir", str(template_dir)
+    ], capture_output=True, text=True, env=env)
+    
+    assert result.returncode == 1
+    assert "Missing required files" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "NameError" not in result.stderr
+    
+    # Ensure no absolute paths in stderr/stdout
+    assert str(Path(script_path).parent.parent.absolute()) not in result.stderr
+    assert str(Path(script_path).parent.parent.absolute()) not in result.stdout
+    
+    zip_path = artifact_dir / "Medi-Matrix_Contest_Demo.zip"
+    assert not zip_path.exists(), "Partial ZIP should be deleted on failure"
+    
+    # Ensure no .bak file in real template dir
+    bak_file = real_template_dir / "README_FIRST.bak"
+    assert not bak_file.exists(), "Should not create .bak files in real template dir"
