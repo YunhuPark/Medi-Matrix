@@ -486,11 +486,12 @@ def test_independent_user_and_ip_limits(mock_auth, mock_supabase_client):
     signed_url_limiter.history.clear()
     
     with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "true"}):
-        for _ in range(30): # signed_url_limiter requests=30
-            client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
+        for i in range(30): # signed_url_limiter requests=30
+            r = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
+            assert r.status_code == 200, f"Request {i} failed: {r.status_code} {r.text}"
         
         # User limit reached for valid_uuid (from mock_auth)
-        res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
+        res = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
         assert res.status_code == 429
         
 def test_max_entries_hard_limit():

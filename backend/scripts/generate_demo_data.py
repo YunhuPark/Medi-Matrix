@@ -120,6 +120,7 @@ def main():
     parser.add_argument('--force', action='store_true', help='Overwrite existing files.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
     parser.add_argument('--out-dir', type=str, default='../demo_datasets/generated', help='Output directory relative to script.')
+    parser.add_argument('--artifact-dir', type=str, default='../../contest_artifacts', help='ZIP output directory relative to script.')
     parser.add_argument('--package', action='store_true', help='Create ZIP package for Google Drive distribution.')
     
     args = parser.parse_args()
@@ -128,6 +129,16 @@ def main():
     np.random.seed(args.seed)
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), args.out_dir))
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Copy templates
+    templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../demo_datasets/templates'))
+    templates = ['README_FIRST.md', 'DATASET_CARD.md', 'expected_results.json']
+    for t in templates:
+        src = os.path.join(templates_dir, t)
+        dst = os.path.join(base_dir, t)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
     
     # Vitals
     files_to_hash = []
@@ -164,20 +175,42 @@ def main():
             total_size += size
             file_name = os.path.basename(f)
             file_info = {
-                "sha256": compute_sha256(f),
+                "filename": file_name,
                 "size_bytes": size,
+                "sha256": compute_sha256(f),
+                "synthetic": True,
+                "contains_phi": False,
+                "clinical_validation": False,
+                "diagnostic_use": False
             }
             if file_name.endswith('.csv'):
-                file_info["shape"] = "100 rows, 6 cols"
-                file_info["dtype"] = "float/string"
+                file_info["format"] = "csv"
+                file_info["purpose"] = "시계열 생체신호 스트리밍 시뮬레이션"
+                file_info["rows"] = 100
+                file_info["columns"] = 6
+                file_info["finite_values"] = True
+                
+                if 'stable' in file_name:
+                    file_info["scenario"] = "stable"
+                elif 'warning' in file_name:
+                    file_info["scenario"] = "warning"
+                else:
+                    file_info["scenario"] = "critical"
+                    
             elif file_name.endswith('.npy'):
+                file_info["format"] = "npy"
+                file_info["purpose"] = "3D 메쉬 생성용 마스크 배열"
                 mask_arr = np.load(f)
                 file_info["shape"] = list(mask_arr.shape)
                 file_info["dtype"] = str(mask_arr.dtype)
+                file_info["finite_values"] = True
             elif file_name.endswith('.nii.gz'):
+                file_info["format"] = "nifti"
+                file_info["purpose"] = "3D 영상 파이프라인 테스트용 팬텀 볼륨"
                 vol = nib.load(f)
                 file_info["shape"] = list(vol.shape)
                 file_info["dtype"] = str(vol.get_data_dtype())
+                file_info["finite_values"] = True
                 
             manifest["files"][file_name] = file_info
             
@@ -191,30 +224,39 @@ def main():
         
     if args.package:
         # Create a ZIP file containing ONLY the generated output
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-        contest_dir = os.path.join(root_dir, "contest_artifacts")
+        contest_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), args.artifact_dir))
         os.makedirs(contest_dir, exist_ok=True)
         zip_path = os.path.join(contest_dir, "Medi-Matrix_Contest_Demo.zip")
         
         # We define an explicit allow-list of files to include from base_dir
         allow_list = [
-            'synthetic_vitals_stable.csv',
-            'synthetic_vitals_warning.csv',
-            'synthetic_vitals_critical.csv',
+            'README_FIRST.md',
+            'DATASET_CARD.md',
+            'expected_results.json',
+            'manifest.json',
             'synthetic_brain_like_volume.nii.gz',
             'synthetic_lesion_mask.npy',
-            'manifest.json',
-            'expected_results.json',
-            'DATASET_CARD.md',
-            'README_FIRST.md'
+            'synthetic_vitals_stable.csv',
+            'synthetic_vitals_warning.csv',
+            'synthetic_vitals_critical.csv'
         ]
         
+        # Check if all files exist
+        missing_files = []
+        for item in allow_list:
+            if not os.path.exists(os.path.join(base_dir, item)):
+                missing_files.append(item)
+                
+        if missing_files:
+            print(f"ERROR: Cannot create ZIP. Missing required files: {missing_files}")
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            sys.exit(1)
+            
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for item in allow_list:
                 item_path = os.path.join(base_dir, item)
-                if os.path.exists(item_path):
-                    # add to zip at root level
-                    zipf.write(item_path, arcname=item)
+                zipf.write(item_path, arcname=item)
                     
         print(f"Package created at: {zip_path}")
 

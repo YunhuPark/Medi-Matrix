@@ -19,6 +19,27 @@ dist/
 coverage/
 
 *.log
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+
+*.log
 *.tmp
 *.glb
 backend/data/real_vitals.csv
@@ -26,8 +47,6 @@ backend/data/uploads/
 backend/data/users/
 
 # Synthetic Demo Datasets
-backend/demo_datasets/generated/*.csv
-backend/demo_datasets/generated/*.nii.gz
-backend/demo_datasets/generated/*.npy
+backend/demo_datasets/generated/
 contest_artifacts/
 *.zip

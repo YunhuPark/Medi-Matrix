@@ -15,12 +15,12 @@
     "synthetic_vitals_warning.csv": {
       "expected_upload_success": true,
       "expected_relative_risk": "warning (stage 2)",
-      "description": "경미한 이상치를 포함하며 시스템이 위험성을 인지하는지 시뮬레이션."
+      "description": "경미한 이상치를 포함하며 시스템이 위험성에 어떻게 반응하는지 시뮬레이션."
     },
     "synthetic_vitals_critical.csv": {
       "expected_upload_success": true,
       "expected_relative_risk": "critical (stage 3)",
-      "description": "심각한 활력 징후 편차를 보이며 가장 높은 우선순위 경고를 발생시키는지 시뮬레이션."
+      "description": "심각한 활력 징후 편차를 보이며 시스템이 어떻게 응답하는지 시뮬레이션."
     },
     "synthetic_brain_like_volume.nii.gz": {
       "expected_upload_success": true,

@@ -22,10 +22,10 @@ Medi-Matrix 배포 사이트에 접속하여 아래 순서로 파일을 업로�
 1. **로그인**: 테스트 계정으로 로그인 (또는 회원가입).
 2. **3D 영상 업로드**: `synthetic_brain_like_volume.nii.gz` 파일을 3D 뷰어 업로드 영역에 Drag & Drop 하거나 클릭하여 업로드합니다.
 3. **병변 마스크 업로드**: 연달아 `synthetic_lesion_mask.npy` 파일을 업로드하여 3D 메쉬가 생성되는지 확인합니다.
-4. **위험도 시뮬레이션 (Warning)**: `synthetic_vitals_warning.csv`를 Vitals 업로드 영역에 넣어, 주의 단계로 위험도가 상승하는지 확인합니다.
+4. **위험도 시뮬레이션 (Warning)**: `synthetic_vitals_warning.csv`를 Vitals 업로드 영역에 넣어, 서로 다른 시나리오에 대해 시뮬레이터가 응답함을 확인합니다.
 5. **위험도 시뮬레이션 비교**: `synthetic_vitals_stable.csv`와 `synthetic_vitals_critical.csv`를 번갈아 업로드하며, 시뮬레이터가 데이터를 반영하여 결과가 달라짐을 확인합니다.
 
-> **참고**: `stable`, `warning`, `critical`은 입력 데이터 시나리오의 상대적 구분을 나타냅니다. 표시되는 위험도는 시뮬레이터의 결과이므로 임상적인 정확성이나 순서를 절대적으로 보장하지는 않습니다.
+> **참고**: `stable`, `warning`, `critical`은 입력 데이터 시나리오의 상대적 구분을 나타냅니다. 표시되는 위험도는 단순 시뮬레이터에 의해 생성되므로, `stable < warning < critical` 의 결과 순서를 보장하지 않으며 임상적인 정확도나 위험도 검증을 의미하지 않습니다.
 
 ## ⚙️ 지원 확장자 및 업로드 방법
 - 3D 영상: `.nii.gz`, `.npy`

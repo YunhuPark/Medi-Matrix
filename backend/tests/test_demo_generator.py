@@ -97,36 +97,100 @@ def test_no_overwrite_without_force(tmp_path, capsys):
     result2 = generate_vitals_csv(str(file1), "stable", num_rows=10, force=True)
     assert result2
 
-def test_package_creation(tmp_path):
+def test_package_creation_strict(tmp_path):
     import subprocess
     script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../scripts/generate_demo_data.py"))
     
-    # We run the script in a subprocess with a custom out-dir inside tmp_path
-    # Wait, it's easier to mock out_dir but the script uses an argument.
+    # We run the script in a subprocess with custom out-dir and artifact-dir
     out_dir = tmp_path / "generated"
+    artifact_dir = tmp_path / "artifacts"
     
-    # Run the script via python
     env = os.environ.copy()
     result = subprocess.run([
         sys.executable, script_path, 
         "--force", "--package", 
-        "--out-dir", str(out_dir)
+        "--out-dir", str(out_dir),
+        "--artifact-dir", str(artifact_dir)
     ], capture_output=True, text=True, env=env)
     
     assert result.returncode == 0
     
-    # Check if zip exists
-    # The script hardcodes the zip path relative to __file__: os.path.join(os.path.dirname(__file__), "../..", "contest_artifacts")
-    # This means the zip is always created at project root contest_artifacts. 
-    # Let's verify it exists and doesn't contain .env.
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-    zip_path = os.path.join(root_dir, "contest_artifacts", "Medi-Matrix_Contest_Demo.zip")
-    assert os.path.exists(zip_path)
+    zip_path = artifact_dir / "Medi-Matrix_Contest_Demo.zip"
+    assert zip_path.exists()
+    
+    allow_list = {
+        'README_FIRST.md',
+        'DATASET_CARD.md',
+        'expected_results.json',
+        'manifest.json',
+        'synthetic_brain_like_volume.nii.gz',
+        'synthetic_lesion_mask.npy',
+        'synthetic_vitals_stable.csv',
+        'synthetic_vitals_warning.csv',
+        'synthetic_vitals_critical.csv'
+    }
     
     import zipfile
+    import json
+    
     with zipfile.ZipFile(zip_path, 'r') as zipf:
-        namelist = zipf.namelist()
-        assert "synthetic_vitals_stable.csv" in namelist
-        assert ".env" not in namelist
-        assert "README.md" not in namelist
-        assert ".git" not in namelist
+        namelist = set(zipf.namelist())
+        assert namelist == allow_list, f"ZIP contents mismatch. Found: {namelist}"
+        
+        # Check manifest fields
+        with zipf.open('manifest.json') as mf:
+            manifest = json.load(mf)
+            
+        assert manifest["seed"] == 42
+        files = manifest["files"]
+        assert set(files.keys()) == {
+            'synthetic_brain_like_volume.nii.gz',
+            'synthetic_lesion_mask.npy',
+            'synthetic_vitals_stable.csv',
+            'synthetic_vitals_warning.csv',
+            'synthetic_vitals_critical.csv'
+        }
+        
+        for k, v in files.items():
+            assert v["synthetic"] is True
+            assert v["contains_phi"] is False
+            assert v["clinical_validation"] is False
+            assert v["diagnostic_use"] is False
+            
+            # verify hash against the one in zip
+            with zipf.open(k) as zitem:
+                file_data = zitem.read()
+                import hashlib
+                sha256 = hashlib.sha256(file_data).hexdigest()
+                assert v["sha256"] == sha256
+                
+def test_package_failure_missing_files(tmp_path):
+    import subprocess
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../scripts/generate_demo_data.py"))
+    
+    out_dir = tmp_path / "generated_fail"
+    artifact_dir = tmp_path / "artifacts"
+    
+    # We want to test if packaging fails when a file is missing.
+    # We rename a template temporarily so the script can't copy it to out_dir
+    from pathlib import Path
+    template_src = Path(script_path).parent.parent / "demo_datasets/templates/README_FIRST.md"
+    template_bak = template_src.with_suffix(".bak")
+    
+    template_src.rename(template_bak)
+    try:
+        env = os.environ.copy()
+        result = subprocess.run([
+            sys.executable, script_path, 
+            "--package", 
+            "--out-dir", str(out_dir),
+            "--artifact-dir", str(artifact_dir)
+        ], capture_output=True, text=True, env=env)
+        
+        assert result.returncode == 1
+        assert "Missing required files" in result.stdout
+        
+        zip_path = artifact_dir / "Medi-Matrix_Contest_Demo.zip"
+        assert not zip_path.exists(), "Partial ZIP should be deleted on failure"
+    finally:
+        template_bak.rename(template_src)
