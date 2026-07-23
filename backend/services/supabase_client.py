@@ -67,17 +67,34 @@ def upload_user_vitals(user_id: str, csv_bytes: bytes) -> None:
     destination_path = f"{valid_uuid}/latest.csv"
     
     try:
-        supabase.storage.from_(bucket_name).upload(
-            file=csv_bytes,
+        import logging
+        logger = logging.getLogger(__name__)
+        masked_uuid = f"{valid_uuid[:8]}***"
+        logger.info(f"Step: upload_user_vitals_start | Bucket: {bucket_name} | Masked UUID: {masked_uuid}")
+        
+        res = supabase.storage.from_(bucket_name).upload(
             path=destination_path,
+            file=csv_bytes,
             file_options={
-                "cacheControl": "0",
+                "cache-control": "0",
                 "upsert": "true",
-                "contentType": "text/csv"
+                "content-type": "text/csv"
             }
         )
+        # Check if response has error dict in older supabase-py versions
+        if isinstance(res, dict) and res.get("error"):
+            status_code = res.get("statusCode", 502)
+            logger.error(f"Step: upload_user_vitals_error_dict | HTTP Status: {status_code}")
+            raise HTTPException(status_code=502, detail="Storage upload failed.")
+            
+        logger.info(f"Step: upload_user_vitals_success | Masked UUID: {masked_uuid}")
+    except HTTPException:
+        raise
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         # Hide original exception detail for security
+        logger.error(f"Step: upload_user_vitals_exception | Exception Class: {e.__class__.__name__}")
         raise HTTPException(status_code=502, detail="Storage upload failed.")
 
 def download_user_vitals(user_id: str) -> bytes:

@@ -161,7 +161,10 @@ async def upload_vitals(
         upload_user_vitals(current_user.user_id, csv_bytes)
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Step: router_upload_vitals_exception | Exception Class: {e.__class__.__name__}")
         raise HTTPException(status_code=500, detail="Failed to save vitals data.")
 
     return {"message": "Vitals CSV uploaded successfully"}
