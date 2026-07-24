@@ -14,8 +14,26 @@ def get_supabase_client() -> Client:
         return create_client(supabase_url, supabase_key)
     except Exception as e:
         import logging
+        import re
         logger = logging.getLogger(__name__)
-        logger.error(f"Step: get_supabase_client_exception | Exception Class: {e.__class__.__name__} | Error Type: invalid_key")
+        
+        error_class = e.__class__.__name__
+        safe_error_type = "unknown_error"
+        
+        if isinstance(e, TypeError):
+            error_msg = str(e).lower()
+            if "unexpected keyword argument" in error_msg:
+                m = re.search(r"unexpected keyword argument '([^']+)'", error_msg)
+                kwarg = m.group(1) if m else "unknown_arg"
+                safe_error_type = f"unexpected_keyword_argument_{kwarg}"
+            elif "missing" in error_msg and "required" in error_msg:
+                safe_error_type = "missing_required_argument"
+            else:
+                safe_error_type = "type_error_other"
+        elif error_class == "SupabaseException":
+            safe_error_type = "supabase_exception"
+        
+        logger.error(f"Step: get_supabase_client_exception | Exception Class: {error_class} | Error Type: {safe_error_type}")
         raise HTTPException(status_code=502, detail="Storage service unavailable.")
 
 def upload_file_to_supabase(bucket_name: str, file_path: str, destination_path: str, expires_in: int = 600) -> str:
