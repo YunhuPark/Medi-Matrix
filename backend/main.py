@@ -12,7 +12,7 @@ app = FastAPI(title="Medical Image 3D Viewer API")
 async def startup_event():
     import importlib.metadata
     print("Runtime dependency versions:")
-    for pkg in ["supabase", "httpx", "gotrue", "postgrest", "storage3"]:
+    for pkg in ["supabase", "supabase-auth", "storage3", "postgrest", "httpx"]:
         try:
             version = importlib.metadata.version(pkg)
             print(f"{pkg}={version}")

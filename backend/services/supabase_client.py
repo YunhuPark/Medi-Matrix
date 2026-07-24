@@ -15,25 +15,35 @@ def get_supabase_client() -> Client:
     except Exception as e:
         import logging
         import re
+        import traceback
         logger = logging.getLogger(__name__)
         
         error_class = e.__class__.__name__
         safe_error_type = "unknown_error"
+        func_name = "unknown_func"
         
+        tb = traceback.extract_tb(e.__traceback__)
+        if tb:
+            func_name = tb[-1].name
+
         if isinstance(e, TypeError):
             error_msg = str(e).lower()
             if "unexpected keyword argument" in error_msg:
                 m = re.search(r"unexpected keyword argument '([^']+)'", error_msg)
-                kwarg = m.group(1) if m else "unknown_arg"
+                kwarg = m.group(1) if m else "unknown"
                 safe_error_type = f"unexpected_keyword_argument_{kwarg}"
             elif "missing" in error_msg and "required" in error_msg:
-                safe_error_type = "missing_required_argument"
+                m = re.search(r"missing \d+ required \w+ argument: '([^']+)'", error_msg)
+                kwarg = m.group(1) if m else "unknown"
+                safe_error_type = f"missing_required_argument_{kwarg}"
+            elif "type" in error_msg:
+                safe_error_type = "invalid_argument_type"
             else:
-                safe_error_type = "type_error_other"
+                safe_error_type = "unknown_type_error"
         elif error_class == "SupabaseException":
             safe_error_type = "supabase_exception"
         
-        logger.error(f"Step: get_supabase_client_exception | Exception Class: {error_class} | Error Type: {safe_error_type}")
+        logger.error(f"Step: get_supabase_client_exception | Exception Class: {error_class} | Function: {func_name} | Error Type: {safe_error_type}")
         raise HTTPException(status_code=502, detail="Storage service unavailable.")
 
 def upload_file_to_supabase(bucket_name: str, file_path: str, destination_path: str, expires_in: int = 600) -> str:
