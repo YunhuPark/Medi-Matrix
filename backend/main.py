@@ -8,6 +8,17 @@ load_dotenv()
 
 app = FastAPI(title="Medical Image 3D Viewer API")
 
+@app.on_event("startup")
+async def startup_event():
+    import importlib.metadata
+    print("Runtime dependency versions:")
+    for pkg in ["supabase", "httpx", "gotrue", "postgrest", "storage3"]:
+        try:
+            version = importlib.metadata.version(pkg)
+            print(f"{pkg}={version}")
+        except importlib.metadata.PackageNotFoundError:
+            print(f"{pkg}=<not-installed>")
+
 # Configure CORS
 import os
 allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
