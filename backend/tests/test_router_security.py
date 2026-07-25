@@ -482,14 +482,20 @@ def test_independent_user_and_ip_limits(mock_auth, mock_supabase_client):
     auth_limiter.history.clear()
     signed_url_limiter.history.clear()
     
-    with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "true"}):
-        for i in range(30): # signed_url_limiter requests=30
-            r = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
-            assert r.status_code == 200, f"Request {i} failed: {r.status_code} {r.text}"
-        
-        # User limit reached for valid_uuid (from mock_auth)
-        res = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
-        assert res.status_code == 429
+    orig_requests = signed_url_limiter.requests
+    signed_url_limiter.requests = 3
+    
+    try:
+        with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "true"}):
+            for i in range(3):
+                r = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
+                assert r.status_code == 200, f"Request {i} failed: {r.status_code} {r.text}"
+            
+            # User limit reached for valid_uuid (from mock_auth)
+            res = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
+            assert res.status_code == 429
+    finally:
+        signed_url_limiter.requests = orig_requests
         
 def test_max_entries_hard_limit():
     from core.rate_limit import RateLimiter
@@ -506,6 +512,34 @@ def test_websocket_origin_empty_reject(mock_auth):
             with pytest.raises(WebSocketDisconnect) as exc:
                 websocket.receive_text()
             assert exc.value.code == 4401
+
+@patch("api.router.httpx.AsyncClient")
+@patch("services.supabase_client.download_user_vitals")
+def test_websocket_origin_vercel_preview(mock_download, mock_client_class):
+    mock_download.return_value = b"hr,bpSys,bpDia,resp,temp,spo2\n80,120,80,16,36.5,98"
+    mock_client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"id": valid_uuid}
+    mock_client.get.return_value = mock_resp
+    mock_client_class.return_value.__aenter__.return_value = mock_client
+    
+    preview_url = "https://medi-matrix-git-agent-medi-matrix-f4e002-park-yun-hus-projects.vercel.app"
+    with patch.dict(os.environ, {"APP_ENV": "production", "ALLOWED_ORIGINS": preview_url, "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
+        mock_mamba_module = MagicMock()
+        mock_mamba_class = MagicMock()
+        mock_mamba_class.return_value.predict.return_value = {"sepsis": 0.1, "ards": 0.1, "shock": 0.1}
+        mock_mamba_module.MambaSystemicPredictor = mock_mamba_class
+        with patch.dict("sys.modules", {"api.mamba_inference": mock_mamba_module}):
+            with client.websocket_connect("/api/v1/triage/stream", headers={"Origin": preview_url}) as websocket:
+                import base64, json, time
+                header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+                payload = base64.urlsafe_b64encode(json.dumps({"exp": int(time.time()) + 3600}).encode()).decode().rstrip("=")
+                valid_token = f"{header}.{payload}.signature"
+                websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": "123", "volume": 100})
+                data = websocket.receive_json()
+                assert data["status"] == "streaming"
+                websocket.close()
 
 def test_signed_url_path_is_user_uuid(mock_auth, auth_headers, mock_supabase_client, mock_inference, mock_mesh_processor):
     test_npy = io.BytesIO()

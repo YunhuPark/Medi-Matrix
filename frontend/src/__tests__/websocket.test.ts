@@ -36,6 +36,18 @@ describe('websocketUrl tests', () => {
     expect(url).toBe('wss://custom.example.com/api/v1/triage/stream');
   });
 
+  it('adds /api/v1/triage/stream to bare host', () => {
+    vi.stubEnv('VITE_WS_BASE_URL', 'wss://medi-matrix-backend-preview.onrender.com');
+    const url = getWebSocketUrl();
+    expect(url).toBe('wss://medi-matrix-backend-preview.onrender.com/api/v1/triage/stream');
+  });
+
+  it('handles /triage/stream missing /api/v1', () => {
+    vi.stubEnv('VITE_WS_BASE_URL', 'wss://custom.example.com/triage/stream');
+    const url = getWebSocketUrl();
+    expect(url).toBe('wss://custom.example.com/api/v1/triage/stream');
+  });
+
   it('falls back to window.location if env variable is absent', () => {
     // Vitest runs in JSDOM, window.location defaults to http://localhost:3000 (vitest default is often localhost:3000)
     // We can temporarily mock window to be safe

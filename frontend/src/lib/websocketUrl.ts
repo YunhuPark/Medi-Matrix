@@ -8,11 +8,11 @@ export function getWebSocketUrl(): string {
   if (envUrl) {
     baseUrl = envUrl;
   } else {
-    // Fallback to same-origin with standard API path
+    // Fallback to same-origin
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'wss:' : 'ws:';
     const host = typeof window !== 'undefined' ? window.location.host : 'localhost';
-    baseUrl = `${protocol}//${host}/api/v1`;
+    baseUrl = `${protocol}//${host}`;
   }
 
   // Normalize HTTP(S) to WS(S)
@@ -25,9 +25,16 @@ export function getWebSocketUrl(): string {
   // Remove trailing slashes
   baseUrl = baseUrl.replace(/\/+$/, '');
 
-  if (baseUrl.endsWith('/triage/stream')) {
+  // Normalize path to prevent duplication
+  if (baseUrl.endsWith('/api/v1/triage/stream')) {
     return baseUrl;
   }
+  if (baseUrl.endsWith('/triage/stream')) {
+    return baseUrl.slice(0, -14) + '/api/v1/triage/stream';
+  }
+  if (baseUrl.endsWith('/api/v1')) {
+    return `${baseUrl}/triage/stream`;
+  }
   
-  return `${baseUrl}/triage/stream`;
+  return `${baseUrl}/api/v1/triage/stream`;
 }
