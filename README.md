@@ -3,6 +3,8 @@
 > ⚠️ **주의 (Disclaimer)**
 > 본 프로젝트는 의료용 진단 시스템이 아닙니다. **개인 포트폴리오 및 연구용 프로토타입**으로 개발되었습니다.
 > 식별 가능한 실제 환자의 민감한 의료 데이터나 생체 신호(EMR/CSV)를 업로드해서는 안 됩니다.
+> **현재 공개 심사용으로 배포된 버전은 `INFERENCE_MODE=demo`로 동작하며, 실제 PyTorch AI 모델이 아닌 합성 데이터 전용 시뮬레이션 결과를 반환합니다.**
+> (Auth, Private Storage, Signed URL, 사용자 격리, WebSocket 통신 아키텍처를 검증하기 위한 프로토타입입니다.)
 
 의료 AI 영상 데이터(NIfTI, NumPy)를 파싱하여 브라우저 상에서 실시간 3D 그래픽으로 렌더링하고, 분석된 환자의 병변 체적 데이터와 **IMST-Mamba (시계열 패혈증 예측 모델 - 현재 데모/실험적 수준)** 데이터를 결합하여 최종 응급도(Triage) 라우팅 프로토타입을 구현하는 **멀티모달(Multi-modal) 마이크로서비스(MSA) 시스템**입니다.
 
@@ -141,7 +143,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 본 저장소는 백엔드(FastAPI)와 프론트엔드(React/Vite)가 분리 배포되는 구조입니다. 프론트엔드는 Vercel에, 백엔드는 Render에 배포할 수 있습니다.
 
 ### Demo 모드와 Model 모드
-- **Demo 모드**: `INFERENCE_MODE=demo` (기본값). 임상 진단 모델을 사용하지 않고 시뮬레이터를 통해 결정론적 결과를 보여줍니다. PyTorch를 포함하지 않으며, Render Free 등 메모리가 제한된 환경에서도 실행될 수 있습니다 (실제 메모리 사용량은 Docker 런타임 결과 참조).
+- **Demo 모드**: `INFERENCE_MODE=demo` (기본값 및 현재 공개 배포 환경). 임상 진단용 실제 PyTorch 모델을 사용하지 않고 시뮬레이터를 통해 결정론적 결과를 보여줍니다. 실제 모델의 정확도나 추론 결과가 아니며, 합성 데이터 파이프라인과 아키텍처(Auth, WebSocket 등) 검증에 목적을 둡니다.
 - **Model 모드**: `INFERENCE_MODE=model`. 실제 PyTorch 모델(UNet3D, Mamba)을 로드합니다. 별도 ML 의존성이 필요하며 Out of Memory (OOM)를 피하기 위해 **최소 2GB 이상의 유료 인스턴스(Standard)**를 권장합니다. Docker 빌드 시 `INSTALL_ML=true` 옵션이 필요합니다.
 
 ### Supabase 스토리지

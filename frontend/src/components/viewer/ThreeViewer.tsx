@@ -276,6 +276,25 @@ export const ThreeViewer: React.FC<ThreeViewerProps> = ({ onLoadFailure }) => {
       <Canvas camera={{ position: [0, 0, 5], fov: 50, near: 0.01, far: 500 }} style={{ background: 'transparent' }}>
         <ModelScene loadedGroup={loadedGroup} />
       </Canvas>
+
+      {/* 모드 표시 오버레이 */}
+      {loadedGroup && (
+        <div style={{
+          position: 'absolute',
+          bottom: '10px',
+          right: '10px',
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          fontSize: '0.8rem',
+          color: '#a1a1aa',
+          zIndex: 5,
+        }}>
+          {import.meta.env.VITE_INFERENCE_MODE !== 'model' 
+            ? '합성/휴리스틱 마스크를 변환한 3D 메쉬' 
+            : '실제 모델 추론 결과 마스크 3D 메쉬'}
+        </div>
+      )}
     </div>
   );
 };

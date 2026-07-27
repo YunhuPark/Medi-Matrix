@@ -14,6 +14,8 @@ import { ensureDemoSession, DemoSessionError } from './auth/demoSession'
 import './App.css'
 
 function MainApp() {
+  const isDemoMode = import.meta.env.VITE_INFERENCE_MODE !== 'model';
+
   const { 
     opacity, setOpacity, 
     modality, setModality,
@@ -85,13 +87,13 @@ function MainApp() {
         setHasVitalsFile(true)
         toast.success('생체 신호 데이터 연동 완료 (Real-Data Ready!)')
       } else {
-        toast.error('CSV 업로드 실패')
+        toast.error('업로드 실패: 2단계 합성 Vitals CSV 업로드 중 오류가 발생했습니다.')
       }
     } catch (error) {
       if (error instanceof DemoSessionError) {
-        toast.error(error.message)
+        toast.error(`인증 실패: ${error.message}`)
       } else {
-        toast.error('백엔드 서버와 통신할 수 없습니다.')
+        toast.error('통신 실패: 백엔드 서버와 연결할 수 없습니다.')
       }
     }
   }
@@ -155,7 +157,7 @@ function MainApp() {
 
       setAppStatus('IDLE')
       toast.error(
-        error.response?.data?.detail || error.message || '업로드 중 오류가 발생했습니다.', 
+        error.response?.data?.detail || error.message || '업로드 실패: 1단계 합성 MRI 처리 중 오류가 발생했습니다.', 
         { id: context?.toastId }
       )
     },
@@ -255,8 +257,7 @@ function MainApp() {
       }
       
       ws.onerror = (_error) => {
-
-        toast.error("WebSocket 연결 중 오류가 발생했습니다.")
+        toast.error("WebSocket 통신 실패: 실시간 모니터링 연결 중 오류가 발생했습니다.")
         setIsStreaming(false)
       }
     }
@@ -339,7 +340,7 @@ function MainApp() {
         </div>
         
         <div style={{ margin: '0 auto', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
-          ⚠️ 공모전 심사용 합성 데이터 전용 데모입니다. 실제 환자 정보 및 식별 가능한 의료 데이터를 업로드하지 마세요.
+          ⚠️ 공모전 심사용 합성 데이터 전용 데모입니다. {isDemoMode && '임상적 검증을 거치지 않은 공모전용 프로토타입입니다.'}
         </div>
 
         <div className="tabs">
@@ -366,6 +367,7 @@ function MainApp() {
             className="tab"
             style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }}
             onClick={handleSignOut}
+            title="이전 상태(업로드 파일, 실시간 모니터링)를 모두 초기화하고 새로운 익명 세션을 발급받습니다."
           >
             데모 세션 초기화
           </button>
@@ -376,6 +378,20 @@ function MainApp() {
         <aside className="sidebar">
           <div className="control-group">
             <h3>Controls</h3>
+            
+            {isDemoMode && (
+              <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', marginBottom: '15px', fontSize: '0.85rem' }}>
+                <strong style={{ color: '#60a5fa' }}>💡 심사위원 시연 순서</strong>
+                <ol style={{ margin: '5px 0 0 15px', padding: 0, color: '#e5e7eb' }}>
+                  <li style={{ color: patientId ? '#4ade80' : 'inherit' }}>1단계: 합성 MRI 업로드 {patientId && '✓'}</li>
+                  <li style={{ color: hasVitalsFile ? '#4ade80' : 'inherit' }}>2단계: 합성 Vitals CSV 업로드 {hasVitalsFile && '✓'}</li>
+                  <li style={{ color: isStreaming ? '#4ade80' : 'inherit' }}>3단계: 실시간 모니터링 시작 {isStreaming && '✓'}</li>
+                </ol>
+                <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#fbbf24' }}>
+                  * Render Free 인스턴스가 대기 상태인 경우 최초 요청(1단계)에 최대 약 1분이 소요될 수 있습니다.
+                </div>
+              </div>
+            )}
             
             <div className="slider-container">
               <label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label>
@@ -409,7 +425,7 @@ function MainApp() {
                 <span style={{ display: uploadMutation.isPending ? 'none' : 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {uploadMutation.isPending ? 'AI 분석 중...' : `[${modality}] 원본 환자 MRI 업로드 (.nii.gz)`}
+                {uploadMutation.isPending ? '처리 중...' : `1단계: [${modality}] 합성 환자 MRI 업로드 (.nii.gz)`}
               </button>
 
               <input
@@ -430,7 +446,7 @@ function MainApp() {
                 <span style={{ display: 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {hasVitalsFile ? '생체 신호 데이터 업로드 완료' : '생체 신호 시계열 업로드 (.csv)'}
+                {hasVitalsFile ? '2단계: 생체 신호 데이터 업로드 완료' : '2단계: 생체 신호 시계열 업로드 (.csv)'}
               </button>
               
               <button 
@@ -447,7 +463,7 @@ function MainApp() {
                 <span style={{ display: 'inline-flex' }}>
                   {isStreaming ? <WifiOff size={18} /> : <Wifi size={18} />}
                 </span>
-                {isStreaming ? '실시간 모니터링 중단' : '실시간 모니터링 시작'}
+                {isStreaming ? '3단계: 실시간 모니터링 중단' : '3단계: 실시간 모니터링 시작'}
               </button>
             </div>
           </div>
@@ -480,22 +496,29 @@ function MainApp() {
                       
                       {diseaseRisks && (
                         <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.5rem' }}>
-                          <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block', marginBottom: '8px' }}>[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)</strong>
+                          <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block', marginBottom: '8px' }}>
+                            {isDemoMode ? '[Time-series] 다중 합병증 시뮬레이션 결과 (CSV Replay)' : '[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)'}
+                          </strong>
                           
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>패혈증 (Sepsis)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '패혈증 시뮬레이션 점수' : '패혈증 (Sepsis) 예측'}</span>
                               <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{diseaseRisks.sepsis}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>호흡곤란증후군 (ARDS)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? 'ARDS 시뮬레이션 점수' : '호흡곤란증후군 (ARDS) 예측'}</span>
                               <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{diseaseRisks.ards}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>저혈량성 쇼크 (Shock)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '쇼크 시뮬레이션 점수' : '저혈량성 쇼크 (Shock) 예측'}</span>
                               <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{diseaseRisks.shock}</span>
                             </div>
                           </div>
+                          {isDemoMode && (
+                            <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '10px' }}>
+                              * 표시 수치는 실제 AI 모델의 진단 결과가 아닙니다 (데모용 시뮬레이션).
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -504,9 +527,16 @@ function MainApp() {
                   {triageLevel && (
                     <div style={{ padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginBottom: '0.5rem', border: `1px solid ${getTriageColor(triageLevel)}33`, transition: 'all 0.3s' }}>
                       <p className="text-sm text-gray" style={{ marginBottom: '0.25rem' }}>
-                        <strong style={{ color: '#fff' }}>[최종 응급도] Multi-modal Triage:</strong><br/>
+                        <strong style={{ color: '#fff' }}>
+                          {isDemoMode ? '[최종 응급도] 시뮬레이션 기반 응급도 분류:' : '[최종 응급도] Multi-modal Triage:'}
+                        </strong><br/>
                         <span style={{ color: getTriageColor(triageLevel), fontWeight: 'bold', fontSize: '1.3rem' }}>{triageLevel}</span>
                       </p>
+                      {isDemoMode && (
+                        <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '4px' }}>
+                          * 합성 입력에 대한 데모 분류이며 의료 판단에 사용할 수 없습니다.
+                        </div>
+                      )}
                       
                       {triageLevel.includes('RED') && (
                         <button

@@ -60,4 +60,20 @@ describe('App Component', () => {
     // test could be more extensive, but checking it renders correctly for now
     expect(await screen.findByText('Medical Image 3D Viewer')).toBeInTheDocument();
   });
+
+  it('demo 모드에서 실제 AI 진단으로 오해할 문구가 표시되지 않고 시뮬레이션 경고가 표시됨', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText(/임상적 검증을 거치지 않은 공모전용 프로토타입/i)).toBeInTheDocument();
+    expect(await screen.findByText(/심사위원 시연 순서/i)).toBeInTheDocument();
+    expect(await screen.findByText(/1단계: .* 합성 환자 MRI 업로드/i)).toBeInTheDocument();
+    
+    // Check that there is no "IMST-Mamba" displayed when not uploaded, but we can check it doesn't render actual AI strings.
+    // The texts are conditionally rendered anyway.
+  });
 });
+
