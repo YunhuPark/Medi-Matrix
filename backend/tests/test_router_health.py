@@ -36,11 +36,28 @@ def test_health_ready_production_invalid_cors(monkeypatch):
     assert response.status_code == 503
     assert "Invalid CORS config" in response.json()["detail"]
 
+import sys
+from unittest.mock import MagicMock
+
+def test_health_ready_model_missing_dependencies(monkeypatch):
+    monkeypatch.setenv("INFERENCE_MODE", "model")
+    monkeypatch.setitem(sys.modules, "torch", None)
+    
+    response = client.get("/health/ready")
+    assert response.status_code == 503
+    detail = response.json().get("detail")
+    assert isinstance(detail, str)
+    assert "ML dependencies missing" in detail
+    assert "model mode" in detail
+
 @patch('os.path.exists')
 def test_health_ready_model_missing_weights(mock_exists, monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "model")
+    monkeypatch.setitem(sys.modules, "torch", MagicMock())
     mock_exists.return_value = False
     
     response = client.get("/health/ready")
     assert response.status_code == 503
-    assert "Model weights missing" in response.json()["detail"]
+    detail = response.json().get("detail")
+    assert isinstance(detail, str)
+    assert "Model weights missing" in detail
