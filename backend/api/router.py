@@ -188,18 +188,23 @@ async def triage_websocket_stream(websocket: WebSocket):
             await websocket.close(code=4429)
             return
             
+        import logging
+        logger = logging.getLogger(__name__)
         app_env = os.environ.get("APP_ENV", "development")
         allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "").strip()
         origin = websocket.headers.get("origin")
+        origin_normalized = origin.strip().rstrip("/") if origin else ""
         
         if app_env == "production" and not allowed_origins_str:
             # Fail-closed in production if no origins specified
+            logger.warning("rejection_stage: origin | origin_allowed: false | close_code: 4401")
             await websocket.close(code=4401)
             return
             
         if allowed_origins_str:
-            allowed_list = [o.strip() for o in allowed_origins_str.split(",") if o.strip()]
-            if origin not in allowed_list:
+            allowed_list = [o.strip().rstrip("/") for o in allowed_origins_str.split(",") if o.strip()]
+            if origin_normalized not in allowed_list:
+                logger.warning("rejection_stage: origin | origin_allowed: false | close_code: 4401")
                 await websocket.close(code=4401)
                 return
             
@@ -207,17 +212,21 @@ async def triage_websocket_stream(websocket: WebSocket):
         try:
             data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
             if len(data.encode('utf-8')) > 8192:
+                logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
                 await websocket.close(code=4401)
                 return
             payload = json.loads(data)
         except asyncio.TimeoutError:
+            logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
         except Exception:
+            logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
         if payload.get("type") != "auth" or not payload.get("access_token"):
+            logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
@@ -227,6 +236,7 @@ async def triage_websocket_stream(websocket: WebSocket):
         supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
         publishable_key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
         if not supabase_url or not publishable_key:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
@@ -237,32 +247,38 @@ async def triage_websocket_stream(websocket: WebSocket):
             async with httpx.AsyncClient() as client:
                 response = await client.get(auth_url, headers=headers, timeout=3.0)
         except Exception:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
         if response.status_code != 200:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
         user_data = response.json()
         user_id = user_data.get("id")
         if not user_id:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
         try:
             valid_uuid = str(uuid.UUID(user_id))
         except Exception:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
 
         # Check user-based rate limit
         if not websocket_limiter.is_allowed(f"user:{valid_uuid}"):
+            logger.warning("rejection_stage: rate_limit | origin_allowed: true | close_code: 4429")
             await websocket.close(code=4429)
             return
 
         # JWT Exp validation (only after verifying the token is valid with Auth service)
         exp = decode_verified_token_exp(token)
         if exp is None:
+            logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
 
@@ -271,6 +287,7 @@ async def triage_websocket_stream(websocket: WebSocket):
         
         # Validate types and ranges
         if not isinstance(patient_id, str) or not (1 <= len(patient_id) <= 50):
+            logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
             
@@ -279,6 +296,7 @@ async def triage_websocket_stream(websocket: WebSocket):
             if volume < 0 or volume > 100000:
                 raise ValueError
         except (TypeError, ValueError):
+            logger.warning("rejection_stage: auth_frame | origin_allowed: true | close_code: 4401")
             await websocket.close(code=4401)
             return
         from services.supabase_client import download_user_vitals
@@ -304,6 +322,7 @@ async def triage_websocket_stream(websocket: WebSocket):
             
             # Check JWT Expiration during stream
             if time.time() >= exp:
+                logger.warning("rejection_stage: jwt | origin_allowed: true | close_code: 4401")
                 await websocket.close(code=4401)
                 return
 

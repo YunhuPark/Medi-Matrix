@@ -8,7 +8,11 @@ export function getWebSocketUrl(): string {
   if (envUrl) {
     baseUrl = envUrl;
   } else {
-    // Fallback to same-origin
+    // Disable localhost fallback in production
+    if (import.meta.env.PROD) {
+      throw new Error("VITE_WS_BASE_URL is required in production environment.");
+    }
+    // Fallback to same-origin for development
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'wss:' : 'ws:';
     const host = typeof window !== 'undefined' ? window.location.host : 'localhost';
