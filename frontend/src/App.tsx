@@ -4,19 +4,47 @@ import { ThreeViewer } from './components/viewer/ThreeViewer'
 import { useViewerStore } from './store/useViewerStore'
 import { Upload, Brain, Activity, Loader2, Stethoscope, Wifi, WifiOff } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
-import { processMedicalMask } from './api/medicalApi'
+import { processMedicalMask, uploadVitals } from './api/medicalApi'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
+import { AuthProvider, useAuth } from './auth/AuthProvider'
+import { getWebSocketUrl } from './lib/websocketUrl'
+import { useSignedUrlRefresh } from './hooks/useSignedUrlRefresh'
+import { getSignedUrl } from './api/medicalApi'
+import { ensureDemoSession, DemoSessionError } from './auth/demoSession'
 import './App.css'
 
-function App() {
+function MainApp() {
+  const isDemoMode = import.meta.env.VITE_INFERENCE_MODE !== 'model';
+
   const { 
     opacity, setOpacity, 
     modality, setModality,
     setModelUrl,
     patientId, setPatientId,
+    meshId, setMeshId,
+    expiresAt, setExpiresAt,
     lesionVolume, setLesionVolume,
     appStatus, setAppStatus,
+    resetMedicalState,
   } = useViewerStore()
+  
+  const { signOut } = useAuth()
+
+  const handleSignOut = async () => {
+    resetMedicalState()
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    setTriageLevel(null)
+    setDiseaseRisks(null)
+    setTriggeringCondition(null)
+    setIsStreaming(false)
+    setHasVitalsFile(false)
+    setVitals({ hr: 80, bpSys: 120, bpDia: 80, resp: 16, temp: 36.5, spo2: 98 })
+    await signOut()
+    toast.success('데모 세션 및 상태가 초기화되었습니다.')
+  }
   
   const [triageLevel, setTriageLevel] = useState<string | null>(null)
   
@@ -51,31 +79,59 @@ function App() {
     formData.append('file', file)
 
     try {
+      await ensureDemoSession()
       toast.info('CSV 업로드 중...')
-      const response = await fetch('http://localhost:8000/api/v1/upload-vitals', {
-        method: 'POST',
-        body: formData,
-      })
+      const response = await uploadVitals(file)
 
-      if (response.ok) {
+      if (response.status === 'success' || response) {
         setHasVitalsFile(true)
         toast.success('생체 신호 데이터 연동 완료 (Real-Data Ready!)')
       } else {
-        toast.error('CSV 업로드 실패')
+        toast.error('업로드 실패: 2단계 합성 Vitals CSV 업로드 중 오류가 발생했습니다.')
       }
     } catch (error) {
-      console.error(error)
-      toast.error('백엔드 서버와 통신할 수 없습니다.')
+      if (error instanceof DemoSessionError) {
+        toast.error(`인증 실패: ${error.message}`)
+      } else {
+        toast.error('통신 실패: 백엔드 서버와 연결할 수 없습니다.')
+      }
     }
   }
 
-  // 컴포넌트 언마운트 시 WebSocket 정리
+  // 컴포넌트 언마운트 시 WebSocket 정리 및 타이머 정리
   useEffect(() => {
     return () => {
       if (wsRef.current) wsRef.current.close()
       if (intervalRef.current) window.clearInterval(intervalRef.current)
     }
   }, [])
+
+  const refreshSignedUrl = async (id: string) => {
+    try {
+      await ensureDemoSession();
+      const data = await getSignedUrl(id);
+      setModelUrl(data.glb_url || data.signed_url);
+      setExpiresAt(data.expires_at);
+      toast.info("의료 3D 모델 보안 링크가 자동 갱신되었습니다.");
+    } catch (error) {
+      if (error instanceof DemoSessionError) {
+        toast.error(error.message);
+      }
+      throw error;
+    }
+  };
+
+  const handleRefreshError = (_errorMsg: string) => {
+
+    toast.error("모델 보안 링크가 만료되었습니다. 페이지를 새로고침하거나 다시 로드해주세요.");
+  };
+
+  const { handleLoadFailure } = useSignedUrlRefresh({
+    meshId,
+    expiresAt,
+    onRefresh: refreshSignedUrl,
+    onError: handleRefreshError,
+  });
 
   // 1. .npy 파일 업로드 및 변환 Mutation
   const uploadMutation = useMutation({
@@ -90,16 +146,18 @@ function App() {
     },
     onSuccess: (data, _variables, context) => {
       toast.success(`[${modality}] AI 3D 메쉬 생성 및 렌더링 완료!`, { id: context?.toastId })
-      setModelUrl(data.glb_url)
+      setModelUrl(data.glb_url || data.signed_url)
       setPatientId(data.patient_id)
+      setMeshId(data.mesh_id)
+      setExpiresAt(data.expires_at)
       setLesionVolume(data.lesion_volume)
       setAppStatus('RENDERED')
     },
     onError: (error: any, _variables, context) => {
-      console.error(error)
+
       setAppStatus('IDLE')
       toast.error(
-        error.response?.data?.detail || error.message || '업로드 중 오류가 발생했습니다.', 
+        error.response?.data?.detail || error.message || '업로드 실패: 1단계 합성 MRI 처리 중 오류가 발생했습니다.', 
         { id: context?.toastId }
       )
     },
@@ -111,7 +169,7 @@ function App() {
   })
 
   // WebSocket 스트리밍 토글 함수
-  const toggleStreaming = () => {
+  const toggleStreaming = async () => {
     if (isStreaming) {
       // 스트리밍 중지
       if (wsRef.current) {
@@ -128,7 +186,25 @@ function App() {
         return
       }
       
-      const wsUrl = `ws://localhost:8000/api/v1/triage/stream`
+      let accessToken: string | null = null;
+      try {
+        const session = await ensureDemoSession();
+        accessToken = session.access_token;
+      } catch (error) {
+        if (error instanceof DemoSessionError) {
+          toast.error(error.message);
+        } else {
+          toast.error("인증 토큰을 준비할 수 없습니다.");
+        }
+        return;
+      }
+      
+      if (!accessToken) {
+        toast.error("인증 토큰이 만료되었습니다. 다시 로그인해주세요.")
+        return
+      }
+      
+      const wsUrl = getWebSocketUrl()
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
@@ -137,8 +213,10 @@ function App() {
         setAppStatus('STREAMING')
         toast.success("실제 환자 데이터 스트리밍(Replay)이 시작되었습니다.")
         
-        // 백엔드에 스트리밍 시작 트리거 1회 전송
+        // 백엔드에 인증 토큰 및 스트리밍 시작 트리거 전송
         ws.send(JSON.stringify({
+          type: "auth",
+          access_token: accessToken,
           patient_id: patientId,
           volume: lesionVolume
         }))
@@ -152,7 +230,6 @@ function App() {
           toggleStreaming()
           return
         }
-
         if (data.vitals) {
           setVitals({
             hr: data.vitals.hr,
@@ -179,15 +256,14 @@ function App() {
         setIsStreaming(false)
       }
       
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error)
-        toast.error("WebSocket 연결 중 오류가 발생했습니다.")
+      ws.onerror = (_error) => {
+        toast.error("WebSocket 통신 실패: 실시간 모니터링 연결 중 오류가 발생했습니다.")
         setIsStreaming(false)
       }
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -198,7 +274,17 @@ function App() {
       return
     }
 
-    uploadMutation.mutate(file)
+    try {
+      await ensureDemoSession();
+      uploadMutation.mutate(file);
+    } catch (error) {
+      if (error instanceof DemoSessionError) {
+        toast.error(error.message);
+      } else {
+        toast.error("인증 토큰을 준비할 수 없습니다.");
+      }
+      event.target.value = '';
+    }
   }
 
   const getStatusColor = () => {
@@ -253,6 +339,10 @@ function App() {
           <h1>Medical Image 3D Viewer</h1>
         </div>
         
+        <div style={{ margin: '0 auto', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
+          ⚠️ 공모전 심사용 합성 데이터 전용 데모입니다. {isDemoMode && '임상적 검증을 거치지 않은 공모전용 프로토타입입니다.'}
+        </div>
+
         <div className="tabs">
           <button 
             className={`tab ${modality === 'Brain' ? 'active' : ''}`}
@@ -272,6 +362,15 @@ function App() {
           >
             <Stethoscope size={18} /> Lung
           </button>
+          
+          <button 
+            className="tab"
+            style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }}
+            onClick={handleSignOut}
+            title="이전 상태(업로드 파일, 실시간 모니터링)를 모두 초기화하고 새로운 익명 세션을 발급받습니다."
+          >
+            데모 세션 초기화
+          </button>
         </div>
       </header>
 
@@ -279,6 +378,20 @@ function App() {
         <aside className="sidebar">
           <div className="control-group">
             <h3>Controls</h3>
+            
+            {isDemoMode && (
+              <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', marginBottom: '15px', fontSize: '0.85rem' }}>
+                <strong style={{ color: '#60a5fa' }}>💡 심사위원 시연 순서</strong>
+                <ol style={{ margin: '5px 0 0 15px', padding: 0, color: '#e5e7eb' }}>
+                  <li style={{ color: patientId ? '#4ade80' : 'inherit' }}>1단계: 합성 MRI 업로드 {patientId && '✓'}</li>
+                  <li style={{ color: hasVitalsFile ? '#4ade80' : 'inherit' }}>2단계: 합성 Vitals CSV 업로드 {hasVitalsFile && '✓'}</li>
+                  <li style={{ color: isStreaming ? '#4ade80' : 'inherit' }}>3단계: 실시간 모니터링 시작 {isStreaming && '✓'}</li>
+                </ol>
+                <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#fbbf24' }}>
+                  * Render Free 인스턴스가 대기 상태인 경우 최초 요청(1단계)에 최대 약 1분이 소요될 수 있습니다.
+                </div>
+              </div>
+            )}
             
             <div className="slider-container">
               <label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label>
@@ -312,7 +425,7 @@ function App() {
                 <span style={{ display: uploadMutation.isPending ? 'none' : 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {uploadMutation.isPending ? 'AI 분석 중...' : `[${modality}] 원본 환자 MRI 업로드 (.nii.gz)`}
+                {uploadMutation.isPending ? '처리 중...' : `1단계: [${modality}] 합성 환자 MRI 업로드 (.nii.gz)`}
               </button>
 
               <input
@@ -333,7 +446,7 @@ function App() {
                 <span style={{ display: 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {hasVitalsFile ? '생체 신호 데이터 업로드 완료' : '생체 신호 시계열 업로드 (.csv)'}
+                {hasVitalsFile ? '2단계: 생체 신호 데이터 업로드 완료' : '2단계: 생체 신호 시계열 업로드 (.csv)'}
               </button>
               
               <button 
@@ -350,7 +463,7 @@ function App() {
                 <span style={{ display: 'inline-flex' }}>
                   {isStreaming ? <WifiOff size={18} /> : <Wifi size={18} />}
                 </span>
-                {isStreaming ? '실시간 모니터링 중단' : '실시간 모니터링 시작'}
+                {isStreaming ? '3단계: 실시간 모니터링 중단' : '3단계: 실시간 모니터링 시작'}
               </button>
             </div>
           </div>
@@ -383,22 +496,29 @@ function App() {
                       
                       {diseaseRisks && (
                         <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.5rem' }}>
-                          <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block', marginBottom: '8px' }}>[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)</strong>
+                          <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block', marginBottom: '8px' }}>
+                            {isDemoMode ? '[Time-series] 다중 합병증 시뮬레이션 결과 (CSV Replay)' : '[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)'}
+                          </strong>
                           
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>패혈증 (Sepsis)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '패혈증 시뮬레이션 점수' : '패혈증 (Sepsis) 예측'}</span>
                               <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{diseaseRisks.sepsis}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>호흡곤란증후군 (ARDS)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? 'ARDS 시뮬레이션 점수' : '호흡곤란증후군 (ARDS) 예측'}</span>
                               <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{diseaseRisks.ards}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>저혈량성 쇼크 (Shock)</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '쇼크 시뮬레이션 점수' : '저혈량성 쇼크 (Shock) 예측'}</span>
                               <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{diseaseRisks.shock}</span>
                             </div>
                           </div>
+                          {isDemoMode && (
+                            <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '10px' }}>
+                              * 표시 수치는 실제 AI 모델의 진단 결과가 아닙니다 (데모용 시뮬레이션).
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -407,9 +527,16 @@ function App() {
                   {triageLevel && (
                     <div style={{ padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginBottom: '0.5rem', border: `1px solid ${getTriageColor(triageLevel)}33`, transition: 'all 0.3s' }}>
                       <p className="text-sm text-gray" style={{ marginBottom: '0.25rem' }}>
-                        <strong style={{ color: '#fff' }}>[최종 응급도] Multi-modal Triage:</strong><br/>
+                        <strong style={{ color: '#fff' }}>
+                          {isDemoMode ? '[최종 응급도] 시뮬레이션 기반 응급도 분류:' : '[최종 응급도] Multi-modal Triage:'}
+                        </strong><br/>
                         <span style={{ color: getTriageColor(triageLevel), fontWeight: 'bold', fontSize: '1.3rem' }}>{triageLevel}</span>
                       </p>
+                      {isDemoMode && (
+                        <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '4px' }}>
+                          * 합성 입력에 대한 데모 분류이며 의료 판단에 사용할 수 없습니다.
+                        </div>
+                      )}
                       
                       {triageLevel.includes('RED') && (
                         <button
@@ -451,7 +578,7 @@ function App() {
         </aside>
 
         <section className="viewer-container">
-          <ThreeViewer />
+          <ThreeViewer onLoadFailure={handleLoadFailure} />
         </section>
       </main>
 
@@ -466,6 +593,18 @@ function App() {
       )}
     </div>
   )
+}
+
+function AppContent() {
+  return <MainApp />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App

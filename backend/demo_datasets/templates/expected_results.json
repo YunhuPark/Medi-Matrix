@@ -1,0 +1,31 @@
+{
+  "dataset": "Medi-Matrix Synthetic Judge Dataset",
+  "version": "2.0",
+  "metadata": {
+    "simulator": true,
+    "clinical_validation": false,
+    "diagnostic_use": false
+  },
+  "scenarios": {
+    "synthetic_vitals_stable.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "stable (stage 1)",
+      "description": "정상 범위의 기저값을 가지며 시스템이 안정적으로 처리하는지 확인하는 기본 시나리오. 정확한 위험도 수치는 시뮬레이터 결과일 뿐 임상적 의미는 없습니다."
+    },
+    "synthetic_vitals_warning.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "warning (stage 2)",
+      "description": "경미한 이상치를 포함하며 시스템이 위험성에 어떻게 반응하는지 시뮬레이션."
+    },
+    "synthetic_vitals_critical.csv": {
+      "expected_upload_success": true,
+      "expected_relative_risk": "critical (stage 3)",
+      "description": "심각한 활력 징후 편차를 보이며 시스템이 어떻게 응답하는지 시뮬레이션."
+    },
+    "synthetic_brain_like_volume.nii.gz": {
+      "expected_upload_success": true,
+      "expected_mesh_generation": true,
+      "description": "3D 볼륨 업로드 시 시스템 검증 통과 여부 및 기본 메쉬 파이프라인 작동 여부 시뮬레이션. 실제 환자의 뇌종양 영상이 아닌 인공적인 구형 팬텀입니다."
+    }
+  }
+}

@@ -23,3 +23,9 @@ coverage/
 *.glb
 backend/data/real_vitals.csv
 backend/data/uploads/
+backend/data/users/
+
+# Synthetic Demo Datasets
+backend/demo_datasets/generated/
+contest_artifacts/
+*.zip
