@@ -589,6 +589,7 @@ function MainApp() {
           triageLevel={triageLevel}
           lesionVolume={lesionVolume}
           triggeringCondition={triggeringCondition}
+          modality={modality}
         />
       )}
     </div>
