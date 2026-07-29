@@ -1,14 +1,6 @@
 
 import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
-
-/** Brain 모드 전용 분석 컨텍스트 (합성 데이터 데모) */
-const BRAIN_DEMO_CONTEXT = {
-  analysisMode: 'synthetic_demo',
-  condition: 'brain_lesion_demo',
-  specialties: 'neurosurgery,neurology',
-  capabilities: 'emergency_surgery,icu,brain_imaging',
-  clinicalValidation: 'false',
-} as const;
+import { buildGoldenTimeUrl } from '../../lib/goldenTimeUrl';
 
 interface EmergencyDashboardProps {
   onClose: () => void;
@@ -33,37 +25,12 @@ export function EmergencyDashboard({
   modality,
 }: EmergencyDashboardProps) {
   const handleGoldenTimeRedirect = () => {
-    const params = new URLSearchParams();
-
-    // 공통 파라미터
-    params.set('triage', triageLevel ?? 'RED');
-
-    if (modality === 'Brain') {
-      // Brain 모드: 합성 뇌 병변 데모 컨텍스트 전달
-      params.set('analysisMode', BRAIN_DEMO_CONTEXT.analysisMode);
-      params.set('condition', BRAIN_DEMO_CONTEXT.condition);
-      params.set('specialties', BRAIN_DEMO_CONTEXT.specialties);
-      params.set('capabilities', BRAIN_DEMO_CONTEXT.capabilities);
-      params.set('clinicalValidation', BRAIN_DEMO_CONTEXT.clinicalValidation);
-
-      // Vitals에서 합병증 조건이 확인된 경우 추가 컨텍스트로 전달 (Unknown 제외)
-      if (triggeringCondition && triggeringCondition !== 'Unknown') {
-        params.set('vitalsCondition', encodeURIComponent(triggeringCondition));
-      }
-    } else {
-      // Lung 등 미구현 모달리티: 임의 질환명 생성 금지
-      params.set('analysisMode', 'synthetic_demo');
-      params.set('condition', 'unsupported_modality');
-      params.set('clinicalValidation', 'false');
-    }
-
-    // 병변 부피 (숫자만, 민감정보 아님)
-    params.set('volume', String(lesionVolume));
-
-    // 민감정보·JWT·Signed URL은 절대 포함하지 않음
-    // patientId, meshId, accessToken 등은 전달하지 않음
-
-    const url = `https://golden-time.vercel.app/?${params.toString()}`;
+    const url = buildGoldenTimeUrl({
+      triage: triageLevel,
+      modality,
+      lesionVolume,
+      vitalsCondition: triggeringCondition,
+    });
     window.open(url, '_blank');
   };
 
