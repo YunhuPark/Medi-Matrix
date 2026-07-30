@@ -51,6 +51,7 @@ function MainApp() {
   // Multi-Disease Risks 상태
   const [diseaseRisks, setDiseaseRisks] = useState<{sepsis: string, ards: string, shock: string} | null>(null)
   const [triggeringCondition, setTriggeringCondition] = useState<string | null>(null)
+  const [sepsisHighRisk, setSepsisHighRisk] = useState<boolean>(false)
   
   // WebSocket 상태 관리
   const [isStreaming, setIsStreaming] = useState(false)
@@ -140,6 +141,7 @@ function MainApp() {
       setAppStatus('PROCESSING')
       setDiseaseRisks(null)
       setTriggeringCondition(null)
+      setSepsisHighRisk(false)
       setTriageLevel(null)
       const toastId = toast.loading(`[${modality}] AI가 종양을 분석 및 분할 중입니다 (PyTorch Inference)...`)
       return { toastId }
@@ -246,6 +248,9 @@ function MainApp() {
         }
         if (data.triggering_condition !== undefined) {
           setTriggeringCondition(data.triggering_condition)
+        }
+        if (data.sepsis_high_risk !== undefined) {
+          setSepsisHighRisk(data.sepsis_high_risk)
         }
         if (data.triage_level) {
           setTriageLevel(data.triage_level)
@@ -589,6 +594,8 @@ function MainApp() {
           triageLevel={triageLevel}
           lesionVolume={lesionVolume}
           triggeringCondition={triggeringCondition}
+          hasSepsisRisk={sepsisHighRisk}
+          modality={modality}
         />
       )}
     </div>
