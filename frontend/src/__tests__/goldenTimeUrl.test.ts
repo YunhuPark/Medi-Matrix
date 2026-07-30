@@ -38,7 +38,7 @@ describe('getGoldenTimeBaseUrl', () => {
 describe('buildGoldenTimeUrl - disease=Unknown 미생성', () => {
   it('triggeringCondition=null이어도 disease=Unknown 미전송', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: null,
+      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: null, hasSepsisRisk: false
     }));
     expect(url.searchParams.has('disease')).toBe(false);
     expect(url.searchParams.get('condition')).not.toBe('Unknown');
@@ -47,7 +47,7 @@ describe('buildGoldenTimeUrl - disease=Unknown 미생성', () => {
 
   it('triggeringCondition="Unknown"이어도 URL에 미포함', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'Unknown',
+      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'Unknown', hasSepsisRisk: false
     }));
     expect(url.toString()).not.toContain('Unknown');
     expect(url.searchParams.has('vitalsCondition')).toBe(false);
@@ -55,12 +55,12 @@ describe('buildGoldenTimeUrl - disease=Unknown 미생성', () => {
 });
 
 // ----------------------------------------------------------------
-// Brain 모드 필수 파라미터
+// 단일 모드 (Brain 단독)
 // ----------------------------------------------------------------
-describe('buildGoldenTimeUrl - Brain 모드', () => {
-  const getUrl = (vitalsCondition?: string | null) =>
+describe('buildGoldenTimeUrl - Brain 단독 모드', () => {
+  const getUrl = () =>
     new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition,
+      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: null, hasSepsisRisk: false
     }));
 
   it('triage=RED 전달', () => {
@@ -71,8 +71,9 @@ describe('buildGoldenTimeUrl - Brain 모드', () => {
     expect(getUrl().searchParams.get('analysisMode')).toBe('synthetic_demo');
   });
 
-  it('condition=brain_lesion_demo 전달', () => {
-    expect(getUrl().searchParams.get('condition')).toBe('brain_lesion_demo');
+  it('primaryCondition=brain_lesion_demo 전달', () => {
+    expect(getUrl().searchParams.get('primaryCondition')).toBe('brain_lesion_demo');
+    expect(getUrl().searchParams.get('condition')).toBe('brain_lesion_demo'); // 하위 호환성
   });
 
   it('specialties에 neurosurgery, neurology 포함', () => {
@@ -81,37 +82,81 @@ describe('buildGoldenTimeUrl - Brain 모드', () => {
     expect(specialties).toContain('neurology');
   });
 
-  it('capabilities에 emergency_surgery, icu, brain_imaging 포함', () => {
+  it('capabilities에 icu, brain_imaging 포함 (emergency_surgery 미포함)', () => {
     const caps = getUrl().searchParams.get('capabilities') ?? '';
-    expect(caps).toContain('emergency_surgery');
-    expect(caps).toContain('icu');  // 반드시 포함
+    expect(caps).not.toContain('emergency_surgery');
+    expect(caps).toContain('icu');
     expect(caps).toContain('brain_imaging');
   });
 
-  it('clinicalValidation=false 전달', () => {
-    expect(getUrl().searchParams.get('clinicalValidation')).toBe('false');
+  it('analysisSources에 mri 포함', () => {
+    expect(getUrl().searchParams.get('analysisSources')).toBe('mri');
   });
+});
 
-  it('volume이 숫자로 전달', () => {
-    expect(Number(getUrl().searchParams.get('volume'))).toBe(21192);
-  });
-
-  it('유효한 vitalsCondition이면 vitalsCondition 파라미터 추가', () => {
-    const url = getUrl('패혈증 (Sepsis)');
-    expect(url.searchParams.has('vitalsCondition')).toBe(true);
-    // URLSearchParams가 인코딩 — 디코딩하면 원문이어야 함 (이중 인코딩 없음)
-    expect(url.searchParams.get('vitalsCondition')).toBe('패혈증 (Sepsis)');
-  });
-
-  it('이중 인코딩 없음 — vitalsCondition 디코딩 값이 원문과 일치', () => {
-    const original = '급성 호흡부전 (ARDS)';
-    const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 100, vitalsCondition: original,
+// ----------------------------------------------------------------
+// 단일 모드 (Sepsis 단독)
+// ----------------------------------------------------------------
+describe('buildGoldenTimeUrl - Sepsis 단독 모드', () => {
+  const getUrl = () =>
+    new URL(buildGoldenTimeUrl({
+      triage: 'RED', modality: 'Lung', lesionVolume: 0, vitalsCondition: '패혈증 위험 탐지 (78%)', hasSepsisRisk: true
     }));
-    // URL 객체의 searchParams.get()은 자동 디코딩 → 한 번만 인코딩됐으면 원문과 동일
-    expect(url.searchParams.get('vitalsCondition')).toBe(original);
-    // 이중 인코딩이면 '%25'가 나타남
-    expect(url.search).not.toContain('%25');
+
+  it('primaryCondition=sepsis_demo 전달', () => {
+    expect(getUrl().searchParams.get('primaryCondition')).toBe('sepsis_demo');
+  });
+
+  it('specialties에 emergency_medicine, internal_medicine 포함', () => {
+    const specialties = getUrl().searchParams.get('specialties') ?? '';
+    expect(specialties).toContain('emergency_medicine');
+    expect(specialties).toContain('internal_medicine');
+  });
+
+  it('capabilities에 icu 포함', () => {
+    const caps = getUrl().searchParams.get('capabilities') ?? '';
+    expect(caps).toContain('icu');
+  });
+
+  it('analysisSources에 vitals 포함', () => {
+    expect(getUrl().searchParams.get('analysisSources')).toBe('vitals');
+  });
+});
+
+// ----------------------------------------------------------------
+// 복합 모드 (Brain + Sepsis)
+// ----------------------------------------------------------------
+describe('buildGoldenTimeUrl - 복합 모드', () => {
+  it('Sepsis가 RED인 경우 Sepsis가 primaryCondition', () => {
+    const url = new URL(buildGoldenTimeUrl({
+      triage: 'RED', modality: 'Brain', lesionVolume: 1000, vitalsCondition: '패혈증 (Sepsis)', hasSepsisRisk: true
+    }));
+    expect(url.searchParams.get('primaryCondition')).toBe('sepsis_demo');
+    expect(url.searchParams.get('secondaryConditions')).toBe('brain_lesion_demo');
+    expect(url.searchParams.get('analysisSources')).toBe('mri,vitals');
+  });
+
+  it('Sepsis가 RED가 아닌 경우 Brain이 primaryCondition', () => {
+    const url = new URL(buildGoldenTimeUrl({
+      triage: 'YELLOW', modality: 'Brain', lesionVolume: 1000, vitalsCondition: '패혈증', hasSepsisRisk: true
+    }));
+    expect(url.searchParams.get('primaryCondition')).toBe('brain_lesion_demo');
+    expect(url.searchParams.get('secondaryConditions')).toBe('sepsis_demo');
+  });
+
+  it('capabilities는 합집합으로 생성된다', () => {
+    const url = new URL(buildGoldenTimeUrl({
+      triage: 'RED', modality: 'Brain', lesionVolume: 1000, vitalsCondition: '패혈증 (Sepsis)', hasSepsisRisk: true
+    }));
+    const caps = url.searchParams.get('capabilities') ?? '';
+    expect(caps).toContain('brain_imaging');
+    expect(caps).toContain('icu');
+    
+    const specs = url.searchParams.get('specialties') ?? '';
+    expect(specs).toContain('neurosurgery');
+    expect(specs).toContain('neurology');
+    expect(specs).toContain('emergency_medicine');
+    expect(specs).toContain('internal_medicine');
   });
 });
 
@@ -120,7 +165,7 @@ describe('buildGoldenTimeUrl - Brain 모드', () => {
 // ----------------------------------------------------------------
 describe('buildGoldenTimeUrl - Lung 모드', () => {
   const url = new URL(buildGoldenTimeUrl({
-    triage: 'RED', modality: 'Lung', lesionVolume: 5000,
+    triage: 'RED', modality: 'Lung', lesionVolume: 5000, hasSepsisRisk: false
   }));
 
   it('condition=unsupported_modality 전달', () => {
@@ -143,21 +188,21 @@ describe('buildGoldenTimeUrl - Lung 모드', () => {
 describe('buildGoldenTimeUrl - triage allowlist', () => {
   it('허용 목록에 없는 triage는 RED로 대체', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'CRITICAL_OVERRIDE', modality: 'Brain', lesionVolume: 100,
+      triage: 'CRITICAL_OVERRIDE', modality: 'Brain', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.get('triage')).toBe('RED');
   });
 
   it('triage=null이면 RED를 기본값으로 사용', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: null, modality: 'Brain', lesionVolume: 100,
+      triage: null, modality: 'Brain', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.get('triage')).toBe('RED');
   });
 
   it('허용 목록 ORANGE는 그대로 전달', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'ORANGE', modality: 'Lung', lesionVolume: 100,
+      triage: 'ORANGE', modality: 'Lung', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.get('triage')).toBe('ORANGE');
   });
@@ -170,7 +215,7 @@ describe('buildGoldenTimeUrl - 악의적/과도한 길이 입력', () => {
   it('120자 초과 vitalsCondition은 잘라낸다', () => {
     const longInput = 'A'.repeat(300);
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 100, vitalsCondition: longInput,
+      triage: 'RED', modality: 'Brain', lesionVolume: 100, vitalsCondition: longInput, hasSepsisRisk: false
     }));
     const val = url.searchParams.get('vitalsCondition') ?? '';
     expect(val.length).toBeLessThanOrEqual(120);
@@ -178,7 +223,7 @@ describe('buildGoldenTimeUrl - 악의적/과도한 길이 입력', () => {
 
   it('URL 길이가 500자 미만이다', () => {
     const url = buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'A'.repeat(300),
+      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'A'.repeat(300), hasSepsisRisk: false
     });
     expect(url.length).toBeLessThan(500);
   });
@@ -190,7 +235,7 @@ describe('buildGoldenTimeUrl - 악의적/과도한 길이 입력', () => {
 describe('buildGoldenTimeUrl - clinicalValidation', () => {
   it('Brain 모드에서 clinicalValidation이 항상 false로 고정된다', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 100,
+      triage: 'RED', modality: 'Brain', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.get('clinicalValidation')).toBe('false');
     // 'true'가 아니어야 특화 모드로 인정됨 (Golden-Time 파서 규칙)
@@ -204,7 +249,7 @@ describe('buildGoldenTimeUrl - clinicalValidation', () => {
 describe('assertNoSensitiveData - 보안 검증', () => {
   it('정상 Brain URL에서 민감정보 패턴이 없다', () => {
     const url = buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'ARDS',
+      triage: 'RED', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'ARDS', hasSepsisRisk: false
     });
     expect(() => assertNoSensitiveData(url)).not.toThrow();
   });
@@ -232,7 +277,7 @@ describe('assertNoSensitiveData - 보안 검증', () => {
 
   it('실제 Brain URL에 authorization이 없다', () => {
     const url = buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 100,
+      triage: 'RED', modality: 'Brain', lesionVolume: 100, hasSepsisRisk: false
     });
     expect(url.toLowerCase()).not.toContain('authorization');
     expect(url.toLowerCase()).not.toContain('patient_id');
@@ -250,7 +295,7 @@ describe('MediMatrixParams 파서 연동 규약 검증', () => {
    */
   it('Brain URL에서 analysisMode가 항상 존재한다', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Brain', lesionVolume: 100,
+      triage: 'RED', modality: 'Brain', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.has('analysisMode')).toBe(true);
     expect(url.searchParams.has('condition')).toBe(true);
@@ -258,7 +303,7 @@ describe('MediMatrixParams 파서 연동 규약 검증', () => {
 
   it('Lung URL에서도 analysisMode가 존재한다', () => {
     const url = new URL(buildGoldenTimeUrl({
-      triage: 'RED', modality: 'Lung', lesionVolume: 100,
+      triage: 'RED', modality: 'Lung', lesionVolume: 100, hasSepsisRisk: false
     }));
     expect(url.searchParams.has('analysisMode')).toBe(true);
     expect(url.searchParams.has('condition')).toBe(true);

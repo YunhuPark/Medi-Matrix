@@ -12,6 +12,8 @@ interface EmergencyDashboardProps {
    * null인 경우 Brain 모드 기본 컨텍스트를 사용하며, 'Unknown'은 절대 전달하지 않습니다.
    */
   triggeringCondition: string | null;
+  /** 구조화된 패혈증 위험 상태 (문자열 파싱 의존 제거) */
+  hasSepsisRisk: boolean;
   /** MRI 분석 모달리티 ('Brain' | 'Lung') */
   modality: 'Brain' | 'Lung';
 }
@@ -22,6 +24,7 @@ export function EmergencyDashboard({
   triageLevel,
   lesionVolume,
   triggeringCondition,
+  hasSepsisRisk,
   modality,
 }: EmergencyDashboardProps) {
   const handleGoldenTimeRedirect = () => {
@@ -30,6 +33,7 @@ export function EmergencyDashboard({
       modality,
       lesionVolume,
       vitalsCondition: triggeringCondition,
+      hasSepsisRisk,
     });
     window.open(url, '_blank');
   };

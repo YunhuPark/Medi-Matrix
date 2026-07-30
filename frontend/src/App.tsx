@@ -589,6 +589,7 @@ function MainApp() {
           triageLevel={triageLevel}
           lesionVolume={lesionVolume}
           triggeringCondition={triggeringCondition}
+          hasSepsisRisk={!!diseaseRisks?.sepsis}
           modality={modality}
         />
       )}

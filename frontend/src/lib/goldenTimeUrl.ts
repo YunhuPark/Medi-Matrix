@@ -25,14 +25,18 @@ const MAX_VITALS_CONDITION_LENGTH = 120;
 const MAX_URL_LENGTH = 500;
 
 // -----------------------------------------------------------------
-// Brain 모드 컨텍스트 (변경 시 Golden-Time ALLOWED_* 상수와 동기)
+// 컨텍스트 상수 (Golden-Time 매핑용)
 // -----------------------------------------------------------------
 const BRAIN_DEMO_CONTEXT = {
-  analysisMode: 'synthetic_demo',
   condition: 'brain_lesion_demo',
-  specialties: 'neurosurgery,neurology',
-  capabilities: 'emergency_surgery,icu,brain_imaging',
-  clinicalValidation: 'false',
+  specialties: ['neurosurgery', 'neurology'],
+  capabilities: ['brain_imaging', 'icu'],
+} as const;
+
+const SEPSIS_DEMO_CONTEXT = {
+  condition: 'sepsis_demo',
+  specialties: ['emergency_medicine', 'internal_medicine'],
+  capabilities: ['icu'],
 } as const;
 
 // -----------------------------------------------------------------
@@ -79,6 +83,10 @@ export interface GoldenTimeUrlOptions {
    * null이거나 'Unknown'이면 미전송.
    */
   vitalsCondition?: string | null;
+  /**
+   * 구조화된 패혈증 위험 상태 (문자열 파싱 의존 제거)
+   */
+  hasSepsisRisk: boolean;
 }
 
 /**
@@ -88,7 +96,7 @@ export interface GoldenTimeUrlOptions {
  * @throws VITE_GOLDEN_TIME_URL이 잘못된 경우
  */
 export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
-  const { triage, modality, lesionVolume, vitalsCondition } = options;
+  const { triage, modality, lesionVolume, vitalsCondition, hasSepsisRisk } = options;
 
   const baseUrl = getGoldenTimeBaseUrl();
   const params = new URLSearchParams();
@@ -97,24 +105,73 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   const validatedTriage = ALLOWED_TRIAGE.includes(triage as TriageLevel) ? triage! : 'RED';
   params.set('triage', validatedTriage);
 
-  if (modality === 'Brain') {
-    params.set('analysisMode', BRAIN_DEMO_CONTEXT.analysisMode);
-    params.set('condition', BRAIN_DEMO_CONTEXT.condition);
-    params.set('specialties', BRAIN_DEMO_CONTEXT.specialties);
-    params.set('capabilities', BRAIN_DEMO_CONTEXT.capabilities);
-    params.set('clinicalValidation', BRAIN_DEMO_CONTEXT.clinicalValidation);
+  // 항상 포함
+  params.set('analysisMode', 'synthetic_demo');
+  params.set('clinicalValidation', 'false');
 
-    // vitalsCondition: 화면 표시용, 길이 제한, 이중 인코딩 금지
-    // URLSearchParams.set()이 인코딩하므로 원문을 그대로 전달
-    if (vitalsCondition && vitalsCondition !== 'Unknown') {
-      const trimmed = vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH);
-      params.set('vitalsCondition', trimmed); // ← 이중 인코딩 없음
+  const hasBrain = modality === 'Brain';
+  const hasSepsis = hasSepsisRisk;
+
+  const analysisSources: string[] = [];
+  let primaryCondition = '';
+  let secondaryConditions = '';
+  const capabilities = new Set<string>();
+  const specialties = new Set<string>();
+
+  if (hasBrain) {
+    analysisSources.push('mri');
+  }
+  if (vitalsCondition && vitalsCondition !== 'Unknown') {
+    analysisSources.push('vitals');
+  }
+
+  if (hasBrain && hasSepsis) {
+    if (validatedTriage === 'RED') {
+      primaryCondition = SEPSIS_DEMO_CONTEXT.condition;
+      secondaryConditions = BRAIN_DEMO_CONTEXT.condition;
+    } else {
+      primaryCondition = BRAIN_DEMO_CONTEXT.condition;
+      secondaryConditions = SEPSIS_DEMO_CONTEXT.condition;
     }
+    BRAIN_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
+    BRAIN_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
+    SEPSIS_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
+    SEPSIS_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
+  } else if (hasBrain) {
+    primaryCondition = BRAIN_DEMO_CONTEXT.condition;
+    BRAIN_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
+    BRAIN_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
+  } else if (hasSepsis) {
+    primaryCondition = SEPSIS_DEMO_CONTEXT.condition;
+    SEPSIS_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
+    SEPSIS_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
   } else {
-    // Lung 등 미구현 모달리티: 임의 질환명 생성 금지
-    params.set('analysisMode', 'synthetic_demo');
-    params.set('condition', 'unsupported_modality');
-    params.set('clinicalValidation', 'false');
+    // Lung 등 미구현 모달리티
+    primaryCondition = 'unsupported_modality';
+  }
+
+  if (analysisSources.length > 0) {
+    params.set('analysisSources', analysisSources.join(','));
+  }
+  
+  if (primaryCondition) {
+    params.set('primaryCondition', primaryCondition);
+    params.set('condition', primaryCondition); // 하위 호환성
+  }
+  if (secondaryConditions) {
+    params.set('secondaryConditions', secondaryConditions);
+  }
+  if (capabilities.size > 0) {
+    params.set('capabilities', Array.from(capabilities).join(','));
+  }
+  if (specialties.size > 0) {
+    params.set('specialties', Array.from(specialties).join(','));
+  }
+
+  // vitalsCondition: 화면 표시용, 길이 제한
+  if (vitalsCondition && vitalsCondition !== 'Unknown') {
+    const trimmed = vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH);
+    params.set('vitalsCondition', trimmed);
   }
 
   // 병변 부피 (숫자만, 민감정보 아님)
@@ -124,7 +181,6 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
 
   // 길이 초과 방지 (최대 500자)
   if (url.length > MAX_URL_LENGTH) {
-    // vitalsCondition을 제거한 단축 버전으로 폴백
     params.delete('vitalsCondition');
     return `${baseUrl}/?${params.toString()}`;
   }
