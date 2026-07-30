@@ -384,7 +384,8 @@ async def triage_websocket_stream(websocket: WebSocket):
                     "shock": f"{(final_shock * 100):.1f}%"
                 },
                 "triggering_condition": triggering_condition if max_prob > 0.8 else None,
-                "triage_level": triage_level
+                "triage_level": triage_level,
+                "sepsis_high_risk": True if (max_prob > 0.8 and max_prob == final_sepsis) else False
             }
 
             await websocket.send_json(response_payload)
