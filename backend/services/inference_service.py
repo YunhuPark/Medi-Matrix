@@ -94,7 +94,14 @@ class MedicalInferenceService:
         data = img.get_fdata()
         
         if self.mode == "demo":
-            print("[AI Service] Demo Mode Active. Generating deterministic synthetic mask...")
+            print("[AI Service] Demo Mode Active. Checking uploaded data...")
+            # 만약 업로드된 NIfTI 파일이 이미 마스크(0과 1 사이)라면, 그 형태 그대로 사용 (뇌/폐 구분 가능)
+            if np.max(data) <= 1.0 and np.min(data) >= 0.0:
+                print("[AI Service] Demo Mode: Uploaded file is already a mask. Using it directly to preserve original shape.")
+                mask_out = data.astype(np.float32)
+                return mask_out, mask_out
+                
+            print("[AI Service] Generating deterministic synthetic mask as fallback...")
             final_mask = self.generate_demo_mask(data.shape)
             heatmap = final_mask
         else:
