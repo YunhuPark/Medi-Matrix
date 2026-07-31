@@ -47,9 +47,9 @@ class RateLimiter:
             self.history[key].append(now)
             return True
 
-# Define limiters
-process_mri_limiter = RateLimiter(requests=5, window_seconds=600)
-upload_vitals_limiter = RateLimiter(requests=10, window_seconds=600)
+# Define limiters (Relaxed for demo/competition testing)
+process_mri_limiter = RateLimiter(requests=50, window_seconds=60)
+upload_vitals_limiter = RateLimiter(requests=100, window_seconds=60)
 triage_send_limiter = RateLimiter(requests=30, window_seconds=60)
 signed_url_limiter = RateLimiter(requests=30, window_seconds=60)
 websocket_limiter = RateLimiter(requests=5, window_seconds=60)
