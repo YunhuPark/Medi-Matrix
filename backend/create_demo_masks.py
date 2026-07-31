@@ -3,49 +3,6 @@ import nibabel as nib
 from scipy.ndimage import gaussian_filter
 import os
 
-def generate_brain_mask(shape=(128, 128, 128)):
-    """
-    좌뇌와 우뇌를 나타내는 두 개의 타원체를 그리고,
-    표면에 가우시안 노이즈와 블러를 줘서 실제 뇌처럼 주름지고 유기적인 형태를 생성합니다.
-    """
-    print(f"Generating realistic Brain 3D mask with shape {shape}...")
-    mask = np.zeros(shape, dtype=np.float32)
-    cx, cy, cz = shape[0] // 2, shape[1] // 2, shape[2] // 2
-    
-    # Grid coordinates
-    x, y, z = np.ogrid[:shape[0], :shape[1], :shape[2]]
-    
-    # Left hemisphere (좌뇌)
-    dx1, dy1, dz1 = (x - (cx - 16)) / 22.0, (y - cy) / 34.0, (z - cz) / 26.0
-    mask[dx1**2 + dy1**2 + dz1**2 <= 1.0] = 1.0
-    
-    # Right hemisphere (우뇌)
-    dx2, dy2, dz2 = (x - (cx + 16)) / 22.0, (y - cy) / 34.0, (z - cz) / 26.0
-    mask[dx2**2 + dy2**2 + dz2**2 <= 1.0] = 1.0
-    
-    # Add noise to make it look organic (sulci/gyri effect)
-    noise = np.random.normal(0, 0.4, shape)
-    mask_noisy = mask + noise * mask # Only add noise where mask is present
-    
-    # Gaussian blur
-    mask_blurred = gaussian_filter(mask_noisy, sigma=2.0)
-    
-    # Thresholding
-    binary_mask = (mask_blurred > 0.35).astype(np.uint8)
-    
-    # Add some random blobs (tumors/lesions) internally
-    num_lesions = 3
-    for _ in range(num_lesions):
-        lx = np.random.randint(cx - 20, cx + 20)
-        ly = np.random.randint(cy - 20, cy + 20)
-        lz = np.random.randint(cz - 10, cz + 10)
-        temp = np.zeros(shape, dtype=np.float32)
-        temp[lx, ly, lz] = 1.0
-        blob = gaussian_filter(temp, sigma=np.random.uniform(3, 8))
-        binary_mask[blob > 0.05] = 1
-
-    return binary_mask
-
 def generate_blobby_mask(shape=(128, 128, 128), num_blobs=5, max_radius=15):
     """
     여러 개의 가우시안 블롭(Blob)을 생성하여 하나로 합친 뒤, 
@@ -93,9 +50,9 @@ if __name__ == "__main__":
     out_dir = "demo_datasets"
     os.makedirs(out_dir, exist_ok=True)
     
-    # 1. 실제 뇌(Brain) 모양의 메쉬 생성
+    # 1. 뇌종양(Brain Tumor) 느낌의 큰 매스(Mass) 생성
     np.random.seed(42) # 재현성을 위해 시드 고정
-    brain_mask = generate_brain_mask(shape=(128, 128, 128))
+    brain_mask = generate_blobby_mask(shape=(128, 128, 128), num_blobs=8, max_radius=12)
     
     # NIfTI로 저장
     brain_nii = nib.Nifti1Image(brain_mask, affine=np.eye(4))

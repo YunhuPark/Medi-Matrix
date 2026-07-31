@@ -50,43 +50,18 @@ class MedicalInferenceService:
 
     def generate_demo_mask(self, data_shape: tuple) -> np.ndarray:
         """
-        [면접 시연용] 시각적으로 멋진 종양(Tumor) 대신, 실제 뇌(Brain) 형태의 마스크를 생성합니다.
+        [면접 시연용] 시각적으로 멋진 종양(Tumor) 형태의 마스크를 생성합니다.
         결정론적 시뮬레이터입니다. 임상 진단 및 학습 모델 추론이 아닙니다.
         """
         mask = np.zeros(data_shape, dtype=np.float32)
+        center = [s // 2 for s in data_shape]
         
-        # 만약 입력 shape가 너무 작으면(예: 3D가 아님) 원본 반환
-        if len(data_shape) < 3:
-            return mask
-            
-        cx, cy, cz = data_shape[0] // 2, data_shape[1] // 2, data_shape[2] // 2
+        z, y, x = center
+        mask[z-10:z+10, y-15:y+15, x-12:x+12] = 1.0
         
-        # Grid coordinates
-        z, y, x = np.ogrid[:data_shape[0], :data_shape[1], :data_shape[2]]
-        
-        # 크기를 shape에 비례하게 동적으로 조절
-        rx, ry, rz = data_shape[2] * 0.17, data_shape[1] * 0.27, data_shape[0] * 0.2
-        offset_x = data_shape[2] * 0.12
-        
-        # Left hemisphere
-        dx1, dy1, dz1 = (x - (cx - offset_x)) / rx, (y - cy) / ry, (z - cz) / rz
-        mask[dx1**2 + dy1**2 + dz1**2 <= 1.0] = 1.0
-        
-        # Right hemisphere
-        dx2, dy2, dz2 = (x - (cx + offset_x)) / rx, (y - cy) / ry, (z - cz) / rz
-        mask[dx2**2 + dy2**2 + dz2**2 <= 1.0] = 1.0
-        
-        # Add noise to make it look organic (sulci/gyri effect)
-        noise = np.random.normal(0, 0.4, data_shape)
-        mask_noisy = mask + noise * mask # Only add noise where mask is present
-        
-        # Gaussian blur
-        mask_blurred = gaussian_filter(mask_noisy, sigma=2.0)
-        
-        # Thresholding
-        binary_mask = (mask_blurred > 0.35).astype(np.float32)
-        
-        return binary_mask
+        mask = gaussian_filter(mask, sigma=3.0)
+        mask = (mask > 0.2).astype(np.float32)
+        return mask
 
     def predict(self, nifti_path: str) -> Tuple[np.ndarray, np.ndarray]:
         print("[AI Service] Loading MRI file...")
@@ -94,14 +69,7 @@ class MedicalInferenceService:
         data = img.get_fdata()
         
         if self.mode == "demo":
-            print("[AI Service] Demo Mode Active. Checking uploaded data...")
-            # 만약 업로드된 NIfTI 파일이 이미 마스크(0과 1 사이)라면, 그 형태 그대로 사용 (뇌/폐 구분 가능)
-            if np.max(data) <= 1.0 and np.min(data) >= 0.0:
-                print("[AI Service] Demo Mode: Uploaded file is already a mask. Using it directly to preserve original shape.")
-                mask_out = data.astype(np.float32)
-                return mask_out, mask_out
-                
-            print("[AI Service] Generating deterministic synthetic mask as fallback...")
+            print("[AI Service] Demo Mode Active. Generating deterministic synthetic mask...")
             final_mask = self.generate_demo_mask(data.shape)
             heatmap = final_mask
         else:
