@@ -191,9 +191,10 @@ async def triage_websocket_stream(websocket: WebSocket):
         import logging
         logger = logging.getLogger(__name__)
         app_env = os.environ.get("APP_ENV", "development")
+        from core.auth import get_allowed_origins, normalize_origin
         allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "").strip()
         origin = websocket.headers.get("origin")
-        origin_normalized = origin.strip().rstrip("/") if origin else ""
+        origin_normalized = normalize_origin(origin) if origin else ""
         
         if app_env == "production" and not allowed_origins_str:
             # Fail-closed in production if no origins specified
@@ -202,8 +203,8 @@ async def triage_websocket_stream(websocket: WebSocket):
             return
             
         if allowed_origins_str:
-            allowed_list = [o.strip().rstrip("/") for o in allowed_origins_str.split(",") if o.strip()]
-            if origin_normalized not in allowed_list:
+            allowed_list = get_allowed_origins(allowed_origins_str, app_env)
+            if "*" not in allowed_list and origin_normalized not in allowed_list:
                 logger.warning("rejection_stage: origin | origin_allowed: false | close_code: 4401")
                 await websocket.close(code=4401)
                 return

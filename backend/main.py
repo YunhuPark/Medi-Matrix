@@ -21,8 +21,11 @@ async def startup_event():
 
 # Configure CORS
 import os
+from core.auth import get_allowed_origins
+
+app_env = os.environ.get("APP_ENV", "development")
 allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+origins = get_allowed_origins(allowed_origins_str, app_env)
 
 app.add_middleware(
     CORSMiddleware,

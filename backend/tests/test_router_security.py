@@ -218,7 +218,7 @@ def test_reject_invalid_extension(mock_auth, auth_headers):
 
 @patch.dict(os.environ, {"MAX_UPLOAD_SIZE": "1024"})
 def test_reject_large_file(mock_auth, auth_headers):
-    valid_data = np.zeros((20, 20, 20), dtype=np.float32) 
+    valid_data = np.zeros((20, 20, 20), dtype=np.float32)
     file_bytes = create_npy_file(valid_data)
     response = client.post(
         "/api/v1/process-mri",
@@ -323,15 +323,15 @@ def test_rate_limit_exceeded(mock_auth, auth_headers):
     # Process MRI limit is 5 per 600s
     from core.rate_limit import process_mri_limiter
     process_mri_limiter.history.clear()
-    
+
     file_bytes = create_npy_file(np.zeros((2,2,2), dtype=np.float32))
-    
+
     with patch("api.router.upload_file_to_supabase", return_value="http://url"):
         with patch("api.router.create_mesh_from_mask", return_value="/tmp/test"):
             for _ in range(5):
                 res = client.post("/api/v1/process-mri", files={"file": ("test.npy", file_bytes, "application/octet-stream")}, headers=auth_headers)
                 assert res.status_code == 200
-            
+
             # 6th should fail
             res = client.post("/api/v1/process-mri", files={"file": ("test.npy", file_bytes, "application/octet-stream")}, headers=auth_headers)
             assert res.status_code == 429
@@ -371,7 +371,7 @@ def test_ws_valid_auth(mock_download, mock_client_class):
     mock_client.get.return_value = mock_resp
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        
+
     try:
         with patch.dict(os.environ, {"ALLOWED_ORIGINS": "", "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
             mock_mamba_module = MagicMock()
@@ -404,7 +404,7 @@ def test_ws_jwt_missing_exp(mock_client_class):
     header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
     payload = base64.urlsafe_b64encode(b'{"sub":"user123"}').decode().rstrip("=")
     token_no_exp = f"{header}.{payload}.sig"
-    
+
     with client.websocket_connect("/api/v1/triage/stream") as websocket:
         websocket.send_json({"type": "auth", "access_token": token_no_exp, "patient_id": "123", "volume": 100})
         with pytest.raises(WebSocketDisconnect) as e:
@@ -423,14 +423,14 @@ def test_ws_invalid_payload_types(mock_client_class):
     header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
     payload = base64.urlsafe_b64encode(json.dumps({"exp": int(time.time()) + 3600}).encode()).decode().rstrip("=")
     valid_token = f"{header}.{payload}.signature"
-    
+
     with client.websocket_connect("/api/v1/triage/stream") as websocket:
         # Invalid patient_id type
         websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": ["not_a_string"], "volume": 100})
         with pytest.raises(WebSocketDisconnect) as e:
             websocket.receive_text()
         assert e.value.code == 4401
-        
+
     with client.websocket_connect("/api/v1/triage/stream") as websocket:
         # Invalid volume type
         websocket.send_json({"type": "auth", "access_token": valid_token, "patient_id": "123", "volume": "not_a_number"})
@@ -471,7 +471,7 @@ def test_pre_auth_ip_limit():
 
 def test_x_forwarded_for_trust(mock_auth, mock_supabase_client):
     auth_limiter.history.clear()
-    
+
     # Without TRUST_PROXY_HEADERS
     with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "false"}):
         res = client.get("/api/v1/meshes/mock-id/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "1.2.3.4"})
@@ -481,22 +481,22 @@ def test_x_forwarded_for_trust(mock_auth, mock_supabase_client):
 def test_independent_user_and_ip_limits(mock_auth, mock_supabase_client):
     auth_limiter.history.clear()
     signed_url_limiter.history.clear()
-    
+
     orig_requests = signed_url_limiter.requests
     signed_url_limiter.requests = 3
-    
+
     try:
         with patch.dict(os.environ, {"TRUST_PROXY_HEADERS": "true"}):
             for i in range(3):
                 r = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "9.9.9.9"})
                 assert r.status_code == 200, f"Request {i} failed: {r.status_code} {r.text}"
-            
+
             # User limit reached for valid_uuid (from mock_auth)
             res = client.get(f"/api/v1/meshes/{valid_uuid}/signed-url", headers={"Authorization": "Bearer x", "X-Forwarded-For": "8.8.8.8"})
             assert res.status_code == 429
     finally:
         signed_url_limiter.requests = orig_requests
-        
+
 def test_max_entries_hard_limit():
     from core.rate_limit import RateLimiter
     limiter = RateLimiter(requests=5, window_seconds=60)
@@ -523,9 +523,9 @@ def test_websocket_origin_vercel_preview(mock_download, mock_client_class):
     mock_resp.json.return_value = {"id": valid_uuid}
     mock_client.get.return_value = mock_resp
     mock_client_class.return_value.__aenter__.return_value = mock_client
-    
+
     preview_url = "https://medi-matrix-git-agent-medi-matrix-f4e002-park-yun-hus-projects.vercel.app"
-    with patch.dict(os.environ, {"APP_ENV": "production", "ALLOWED_ORIGINS": preview_url, "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
+    with patch.dict(os.environ, {"APP_ENV": "production", "ALLOWED_ORIGINS": preview_url + "/", "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
         mock_mamba_module = MagicMock()
         mock_mamba_class = MagicMock()
         mock_mamba_class.return_value.predict.return_value = {"sepsis": 0.1, "ards": 0.1, "shock": 0.1}
@@ -540,6 +540,42 @@ def test_websocket_origin_vercel_preview(mock_download, mock_client_class):
                 data = websocket.receive_json()
                 assert data["status"] == "streaming"
                 websocket.close()
+
+def test_auth_normalize_origin():
+    from core.auth import normalize_origin
+    assert normalize_origin("https://example.vercel.app") == "https://example.vercel.app"
+    assert normalize_origin("https://example.vercel.app/") == "https://example.vercel.app"
+    assert normalize_origin("  https://example.vercel.app/  ") == "https://example.vercel.app"
+    assert normalize_origin("*") == "*"
+    assert normalize_origin("https://example.vercel.app.attacker.com") == "https://example.vercel.app.attacker.com"  # Normalization works, exact match fails later
+    assert normalize_origin("https://example.vercel.app/path?query=1") == ""
+    assert normalize_origin("invalid") == ""
+
+def test_get_allowed_origins():
+    from core.auth import get_allowed_origins
+
+    # Normal case
+    origins = get_allowed_origins("https://a.com, https://b.com/ ", "production")
+    assert origins == ["https://a.com", "https://b.com"]
+
+    # Wildcard in dev vs prod
+    assert get_allowed_origins("*, https://a.com", "development") == ["*", "https://a.com"]
+    assert get_allowed_origins("*, https://a.com", "production") == ["https://a.com"]
+
+@patch("api.router.httpx.AsyncClient")
+@patch("services.supabase_client.download_user_vitals")
+def test_websocket_origin_attacker_domain(mock_download, mock_client_class):
+    mock_download.return_value = b"hr,bpSys\n80,120"
+    mock_client_class.return_value.__aenter__.return_value = AsyncMock()
+
+    allowed = "https://example.vercel.app"
+    attacker = "https://example.vercel.app.attacker.com"
+    with patch.dict(os.environ, {"APP_ENV": "production", "ALLOWED_ORIGINS": allowed, "SUPABASE_URL": "http://mock", "SUPABASE_PUBLISHABLE_KEY": "mock"}):
+        with client.websocket_connect("/api/v1/triage/stream", headers={"Origin": attacker}) as websocket:
+            with pytest.raises(WebSocketDisconnect):
+                websocket.receive_text()
+
+
 
 def test_signed_url_path_is_user_uuid(mock_auth, auth_headers, mock_supabase_client, mock_inference, mock_mesh_processor):
     test_npy = io.BytesIO()
@@ -561,7 +597,7 @@ def test_signed_url_generation_fail_cleanup(mock_auth, auth_headers, mock_supaba
     res = client.post("/api/v1/process-mri", files={"file": ("test.npy", test_npy, "application/octet-stream")}, data={"modality": "Brain"}, headers=auth_headers)
     assert res.status_code == 502
     mock_supabase_client.storage.from_().remove.assert_called_once()
-    
+
 def test_signed_url_expires_at(mock_auth, auth_headers, mock_supabase_client):
     # Test GET /meshes/{id}/signed-url
     mesh_id = str(uuid.uuid4())
