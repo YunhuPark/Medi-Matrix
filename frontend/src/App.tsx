@@ -86,7 +86,7 @@ function MainApp() {
 
       if (response.status === 'success' || response) {
         setHasVitalsFile(true)
-        toast.success('생체 신호 데이터 연동 완료 (Real-Data Ready!)')
+        toast.success(isDemoMode ? '합성 Vitals 데이터 연동 완료' : 'Vitals 데이터 연동 완료')
       } else {
         toast.error('업로드 실패: 2단계 합성 Vitals CSV 업로드 중 오류가 발생했습니다.')
       }
@@ -143,11 +143,20 @@ function MainApp() {
       setTriggeringCondition(null)
       setSepsisHighRisk(false)
       setTriageLevel(null)
-      const toastId = toast.loading(`[${modality}] AI가 종양을 분석 및 분할 중입니다 (PyTorch Inference)...`)
+      const toastId = toast.loading(
+        isDemoMode
+          ? `[${modality}] 합성 3D 의료영상 처리 및 메쉬 생성 중...`
+          : `[${modality}] AI가 종양을 분석 및 분할 중입니다 (PyTorch Inference)...`
+      )
       return { toastId }
     },
     onSuccess: (data, _variables, context) => {
-      toast.success(`[${modality}] AI 3D 메쉬 생성 및 렌더링 완료!`, { id: context?.toastId })
+      toast.success(
+        isDemoMode
+          ? `[${modality}] 합성 3D 메쉬 생성 및 렌더링 완료!`
+          : `[${modality}] AI 3D 메쉬 생성 및 렌더링 완료!`,
+        { id: context?.toastId }
+      )
       setModelUrl(data.glb_url || data.signed_url)
       setPatientId(data.patient_id)
       setMeshId(data.mesh_id)
@@ -213,7 +222,11 @@ function MainApp() {
       ws.onopen = () => {
         setIsStreaming(true)
         setAppStatus('STREAMING')
-        toast.success("실제 환자 데이터 스트리밍(Replay)이 시작되었습니다.")
+        toast.success(
+          isDemoMode
+            ? "합성 Vitals 데이터 스트리밍(Replay)이 시작되었습니다."
+            : "Vitals 데이터 스트리밍이 시작되었습니다."
+        )
         
         // 백엔드에 인증 토큰 및 스트리밍 시작 트리거 전송
         ws.send(JSON.stringify({
@@ -430,7 +443,11 @@ function MainApp() {
                 <span style={{ display: uploadMutation.isPending ? 'none' : 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {uploadMutation.isPending ? '처리 중...' : `1단계: [${modality}] 합성 환자 MRI 업로드 (.nii.gz)`}
+                {uploadMutation.isPending
+                  ? '처리 중...'
+                  : isDemoMode
+                    ? `1단계: [${modality}] 합성 3D 의료영상 업로드 (.nii.gz)`
+                    : `1단계: [${modality}] 의료영상 업로드 (.nii.gz)`}
               </button>
 
               <input
@@ -451,7 +468,9 @@ function MainApp() {
                 <span style={{ display: 'inline-flex' }}>
                   <Upload size={18} />
                 </span>
-                {hasVitalsFile ? '2단계: 생체 신호 데이터 업로드 완료' : '2단계: 생체 신호 시계열 업로드 (.csv)'}
+                {hasVitalsFile
+                  ? (isDemoMode ? '2단계: 합성 Vitals 업로드 완료' : '2단계: Vitals 업로드 완료')
+                  : (isDemoMode ? '2단계: 합성 Vitals 시계열 업로드 (.csv)' : '2단계: Vitals 시계열 업로드 (.csv)')}
               </button>
               
               <button 
@@ -502,26 +521,26 @@ function MainApp() {
                       {diseaseRisks && (
                         <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.5rem' }}>
                           <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block', marginBottom: '8px' }}>
-                            {isDemoMode ? '[Time-series] 다중 합병증 시뮬레이션 결과 (CSV Replay)' : '[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)'}
+                            {isDemoMode ? '[Time-series] Vitals 기반 위험 시뮬레이션 (CSV Replay)' : '[Time-series] 다중 합병증 동시 예측 (IMST-Mamba)'}
                           </strong>
                           
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '패혈증 시뮬레이션 점수' : '패혈증 (Sepsis) 예측'}</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '패혈증 유사 (Sepsis-like) 위험 점수' : '패혈증 (Sepsis) 예측'}</span>
                               <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{diseaseRisks.sepsis}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? 'ARDS 시뮬레이션 점수' : '호흡곤란증후군 (ARDS) 예측'}</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? 'ARDS 유사 (ARDS-like) 위험 점수' : '호흡곤란증후군 (ARDS) 예측'}</span>
                               <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{diseaseRisks.ards}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '쇼크 시뮬레이션 점수' : '저혈량성 쇼크 (Shock) 예측'}</span>
+                              <span style={{ color: '#a1a1aa' }}>{isDemoMode ? '쇼크 유사 (Shock-like) 위험 점수' : '저혈량성 쇼크 (Shock) 예측'}</span>
                               <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{diseaseRisks.shock}</span>
                             </div>
                           </div>
                           {isDemoMode && (
                             <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '10px' }}>
-                              * 표시 수치는 실제 AI 모델의 진단 결과가 아닙니다 (데모용 시뮬레이션).
+                              * 표시 수치는 합성 Vitals 기반 데모 점수이며 임상 예측 또는 진단 결과가 아닙니다.
                             </div>
                           )}
                         </div>
