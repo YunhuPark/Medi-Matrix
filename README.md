@@ -102,7 +102,7 @@
 - 공개 배포 시에는 CAPTCHA 및 일정 시간 지난 익명 사용자 정리 정책 도입을 권장합니다.
 
 ## Deployment Status
-- **Frontend (Vercel)**: React 프론트엔드 배포 완료 (`https://[VERCEL_DOMAIN]`)
+- **Frontend (Vercel)**: https://medi-matrix.vercel.app
 - **Backend (Render)**: Docker Web Service 기반 배포 준비 완료 (`render.yaml` 포함)
   - *참고*: 모델 로드 과정 등을 고려할 때 Render 인스턴스의 메모리가 최소 1GB~2GB 이상 필요할 수 있습니다.
 - **Storage (Supabase)**: Auth 및 Private Storage 적용 완료
@@ -157,4 +157,4 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
 - `SUPABASE_STORAGE_BUCKET=medical-meshes`
 - `SUPABASE_VITALS_BUCKET=medical-vitals`
-- `ALLOWED_ORIGINS=https://내프론트엔드도메인.vercel.app`
+- `ALLOWED_ORIGINS=https://medi-matrix.vercel.app`
