@@ -56,8 +56,8 @@ function MainApp() {
   
   // Multi-Disease Risks 상태
   const [diseaseRisks, setDiseaseRisks] = useState<{sepsis: string, ards: string, shock: string} | null>(null)
-  const [triggeringCondition, setTriggeringCondition] = useState<string | null>(null)
-  const [sepsisHighRisk, setSepsisHighRisk] = useState<boolean>(false)
+  const [, setTriggeringCondition] = useState<string | null>(null)
+  const [, setSepsisHighRisk] = useState<boolean>(false)
   
   // WebSocket 상태 관리
   const [isStreaming, setIsStreaming] = useState(false)
