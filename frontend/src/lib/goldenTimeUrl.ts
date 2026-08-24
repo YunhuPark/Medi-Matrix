@@ -5,7 +5,6 @@
  * 보안 규칙:
  * - HTTPS(s) URL만 허용
  * - 민감정보(JWT, patientId, meshId, Signed URL, access_token) 절대 포함 금지
- * - vitalsCondition: 길이 제한 후 원문 전달 (URLSearchParams이 인코딩, 이중 인코딩 금지)
  * - VITE_GOLDEN_TIME_URL 환경변수를 사용, 없으면 production 기본값
  */
 
@@ -53,11 +52,9 @@ export interface GoldenTimeUrlOptions {
   triage: string | null;
   modality: ModalityType;
   lesionVolume: number;
+  /** 설명 UI용 Vitals 위험 패턴. RED 리디렉션의 병원 탐색 조건에는 사용하지 않습니다. */
   vitalsCondition?: string | null;
-  /**
-   * 하위 호환성용 플래그.
-   * RED 리디렉션에서는 특정 질환 확정으로 해석하지 않고 전신악화 컨텍스트로 통일합니다.
-   */
+  /** 하위 호환성용 플래그. RED에서는 특정 질환 확정으로 해석하지 않습니다. */
   hasSepsisRisk: boolean;
 }
 
@@ -103,9 +100,10 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   if (hasBrain) analysisSources.push('mri');
   if (hasVitals) analysisSources.push('vitals');
 
-  if (validatedTriage === 'RED' && hasVitals) {
-    // RED + Vitals는 Sepsis/ARDS/Shock 중 어떤 패턴이 우세하더라도
-    // 특정 질환을 확정하지 않고 '전신악화 응급상황'으로 통일합니다.
+  if (validatedTriage === 'RED') {
+    // RED는 ARDS-like / Sepsis-like / Shock-like 어느 패턴에서 눌러도
+    // Golden-Time에는 정확히 같은 전신악화 응급 컨텍스트를 전달합니다.
+    // 위험 패턴은 Medi-Matrix 설명 UI에만 남기며 RED URL에는 넣지 않습니다.
     primaryCondition = SYSTEMIC_DETERIORATION_CONTEXT.condition;
     addContext(SYSTEMIC_DETERIORATION_CONTEXT);
 
@@ -113,9 +111,11 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
       secondaryConditions = BRAIN_DEMO_CONTEXT.condition;
       addContext(BRAIN_DEMO_CONTEXT);
     }
+
+    if (!analysisSources.includes('vitals')) {
+      analysisSources.push('vitals');
+    }
   } else if (hasBrain) {
-    // YELLOW에서는 실제 랭킹이 primaryCondition(뇌 병변) 중심으로 유지됩니다.
-    // 기존 링크 호환성을 위해 Sepsis-high 표시는 secondary로만 보존합니다.
     primaryCondition = BRAIN_DEMO_CONTEXT.condition;
     addContext(BRAIN_DEMO_CONTEXT);
     if (hasSepsis) {
@@ -138,7 +138,9 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   if (capabilities.size > 0) params.set('capabilities', Array.from(capabilities).join(','));
   if (specialties.size > 0) params.set('specialties', Array.from(specialties).join(','));
 
-  if (hasVitals && vitalsCondition) {
+  // YELLOW 등 비-RED에서만 설명용 Vitals condition을 전달합니다.
+  // RED는 subtype에 따라 URL/화면이 달라 보이는 혼란을 막기 위해 의도적으로 제외합니다.
+  if (validatedTriage !== 'RED' && hasVitals && vitalsCondition) {
     params.set('vitalsCondition', vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH));
   }
 
