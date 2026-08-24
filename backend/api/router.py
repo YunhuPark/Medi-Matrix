@@ -11,6 +11,7 @@ import csv
 import math
 import tempfile
 import time
+from itertools import cycle
 from typing import Optional
 from fastapi.responses import JSONResponse
 
@@ -173,6 +174,7 @@ async def upload_vitals(
 async def triage_websocket_stream(websocket: WebSocket):
     """
     실제 CSV 데이터를 읽어서 실시간 생체 신호(HR, BP 등)와 패혈증 확률(IMST-Mamba)을 1초마다 스트리밍합니다.
+    CSV의 마지막 행에 도달하면 같은 연결에서 첫 행부터 다시 반복합니다.
     """
     await websocket.accept()
     try:
@@ -317,7 +319,13 @@ async def triage_websocket_stream(websocket: WebSocket):
         import io
         csv_text = csv_bytes.decode('utf-8')
         reader = csv.DictReader(io.StringIO(csv_text))
-        for row in reader:
+        replay_rows = list(reader)
+        if not replay_rows:
+            await websocket.send_json({"status": "error", "message": "업로드된 생체 신호 CSV에 데이터 행이 없습니다."})
+            await websocket.close(code=1008)
+            return
+
+        for row in cycle(replay_rows):
             await asyncio.sleep(1.0)
             
             # Check JWT Expiration during stream
@@ -397,9 +405,6 @@ async def triage_websocket_stream(websocket: WebSocket):
             }
 
             await websocket.send_json(response_payload)
-
-        # CSV 끝 도달 시
-        await websocket.send_json({"status": "completed"})
 
     except WebSocketDisconnect:
         pass
