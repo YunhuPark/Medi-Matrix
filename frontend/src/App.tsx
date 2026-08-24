@@ -661,7 +661,7 @@ function MainApp() {
             setDashboardSnapshot(null)
           }}
           patientId={dashboardSnapshot.patientId}
-          triageLevel={dashboardSnapshot.triageLevel}
+          triageLevel={triageLevel}
           lesionVolume={dashboardSnapshot.lesionVolume}
           triggeringCondition={dashboardSnapshot.triggeringCondition}
           hasSepsisRisk={dashboardSnapshot.hasSepsisRisk}
