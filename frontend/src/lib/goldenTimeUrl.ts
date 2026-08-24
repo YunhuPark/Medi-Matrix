@@ -27,7 +27,13 @@ const BRAIN_DEMO_CONTEXT = {
 const SEPSIS_DEMO_CONTEXT = {
   condition: 'sepsis_demo',
   specialties: ['emergency_medicine', 'internal_medicine'],
-  capabilities: ['icu'],
+  capabilities: ['emergency_room', 'icu'],
+} as const;
+
+const SYSTEMIC_DETERIORATION_CONTEXT = {
+  condition: 'systemic_deterioration_demo',
+  specialties: ['emergency_medicine', 'internal_medicine'],
+  capabilities: ['emergency_room', 'icu'],
 } as const;
 
 export function getGoldenTimeBaseUrl(): string {
@@ -51,11 +57,6 @@ export interface GoldenTimeUrlOptions {
   hasSepsisRisk: boolean;
 }
 
-/**
- * UI에서 사용하는 `RED (초응급 - ...)` 같은 전체 라벨을
- * Golden-Time이 이해하는 정규화된 상태값으로 변환합니다.
- * 허용되지 않은 값은 기존 보수적 동작을 유지해 RED로 처리합니다.
- */
 export function normalizeTriageLevel(triage: string | null): TriageLevel {
   if (!triage) return 'RED';
   const upper = triage.trim().toUpperCase();
@@ -79,6 +80,7 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
 
   const hasBrain = modality === 'Brain';
   const hasSepsis = hasSepsisRisk;
+  const hasVitals = Boolean(vitalsCondition && vitalsCondition !== 'Unknown');
 
   const analysisSources: string[] = [];
   let primaryCondition = '';
@@ -86,29 +88,39 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   const capabilities = new Set<string>();
   const specialties = new Set<string>();
 
-  if (hasBrain) analysisSources.push('mri');
-  if (vitalsCondition && vitalsCondition !== 'Unknown') analysisSources.push('vitals');
+  const addContext = (context: {
+    capabilities: readonly string[];
+    specialties: readonly string[];
+  }) => {
+    context.capabilities.forEach(c => capabilities.add(c));
+    context.specialties.forEach(s => specialties.add(s));
+  };
 
-  if (hasBrain && hasSepsis) {
-    if (validatedTriage === 'RED') {
-      primaryCondition = SEPSIS_DEMO_CONTEXT.condition;
+  if (hasBrain) analysisSources.push('mri');
+  if (hasVitals) analysisSources.push('vitals');
+
+  if (validatedTriage === 'RED' && hasVitals) {
+    // RED + Vitals는 특정 진단 확정이 아니라 전신 악화 응급상황으로 처리합니다.
+    const systemicContext = hasSepsis ? SEPSIS_DEMO_CONTEXT : SYSTEMIC_DETERIORATION_CONTEXT;
+    primaryCondition = systemicContext.condition;
+    addContext(systemicContext);
+
+    if (hasBrain) {
       secondaryConditions = BRAIN_DEMO_CONTEXT.condition;
-    } else {
-      primaryCondition = BRAIN_DEMO_CONTEXT.condition;
-      secondaryConditions = SEPSIS_DEMO_CONTEXT.condition;
+      addContext(BRAIN_DEMO_CONTEXT);
     }
-    BRAIN_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
-    BRAIN_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
-    SEPSIS_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
-    SEPSIS_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
   } else if (hasBrain) {
+    // YELLOW에서는 실제 랭킹이 primaryCondition(뇌 병변) 중심으로 유지됩니다.
+    // 기존 링크 호환성을 위해 Sepsis-high 표시는 secondary로만 보존합니다.
     primaryCondition = BRAIN_DEMO_CONTEXT.condition;
-    BRAIN_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
-    BRAIN_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
+    addContext(BRAIN_DEMO_CONTEXT);
+    if (hasSepsis) {
+      secondaryConditions = SEPSIS_DEMO_CONTEXT.condition;
+      addContext(SEPSIS_DEMO_CONTEXT);
+    }
   } else if (hasSepsis) {
     primaryCondition = SEPSIS_DEMO_CONTEXT.condition;
-    SEPSIS_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
-    SEPSIS_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
+    addContext(SEPSIS_DEMO_CONTEXT);
   } else {
     primaryCondition = 'unsupported_modality';
   }
@@ -122,7 +134,7 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   if (capabilities.size > 0) params.set('capabilities', Array.from(capabilities).join(','));
   if (specialties.size > 0) params.set('specialties', Array.from(specialties).join(','));
 
-  if (vitalsCondition && vitalsCondition !== 'Unknown') {
+  if (hasVitals && vitalsCondition) {
     params.set('vitalsCondition', vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH));
   }
 
