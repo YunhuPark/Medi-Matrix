@@ -54,6 +54,10 @@ export interface GoldenTimeUrlOptions {
   modality: ModalityType;
   lesionVolume: number;
   vitalsCondition?: string | null;
+  /**
+   * 하위 호환성용 플래그.
+   * RED 리디렉션에서는 특정 질환 확정으로 해석하지 않고 전신악화 컨텍스트로 통일합니다.
+   */
   hasSepsisRisk: boolean;
 }
 
@@ -100,10 +104,10 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   if (hasVitals) analysisSources.push('vitals');
 
   if (validatedTriage === 'RED' && hasVitals) {
-    // RED + Vitals는 특정 진단 확정이 아니라 전신 악화 응급상황으로 처리합니다.
-    const systemicContext = hasSepsis ? SEPSIS_DEMO_CONTEXT : SYSTEMIC_DETERIORATION_CONTEXT;
-    primaryCondition = systemicContext.condition;
-    addContext(systemicContext);
+    // RED + Vitals는 Sepsis/ARDS/Shock 중 어떤 패턴이 우세하더라도
+    // 특정 질환을 확정하지 않고 '전신악화 응급상황'으로 통일합니다.
+    primaryCondition = SYSTEMIC_DETERIORATION_CONTEXT.condition;
+    addContext(SYSTEMIC_DETERIORATION_CONTEXT);
 
     if (hasBrain) {
       secondaryConditions = BRAIN_DEMO_CONTEXT.condition;
