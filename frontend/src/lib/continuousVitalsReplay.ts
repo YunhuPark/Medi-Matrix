@@ -33,7 +33,7 @@ class ContinuousVitalsReplayWebSocket extends EventTarget {
   private readonly targetUrl: string | URL;
   private readonly protocols?: string | string[];
   private readonly continuousReplay: boolean;
-  private authFrame: string | ArrayBufferLike | Blob | ArrayBufferView | null = null;
+  private authFrame: string | null = null;
   private manuallyClosed = false;
   private restarting = false;
   private openedOnce = false;
@@ -70,7 +70,7 @@ class ContinuousVitalsReplayWebSocket extends EventTarget {
         // Normal non-JSON WebSocket frames are still forwarded unchanged.
       }
     }
-    this.socket.send(data);
+    this.socket.send(data as never);
   }
 
   close(code?: number, reason?: string): void {
