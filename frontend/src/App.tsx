@@ -11,6 +11,7 @@ import { getWebSocketUrl } from './lib/websocketUrl'
 import { useSignedUrlRefresh } from './hooks/useSignedUrlRefresh'
 import { getSignedUrl } from './api/medicalApi'
 import { ensureDemoSession, DemoSessionError } from './auth/demoSession'
+import { reduceRedSnapshot, type RedSnapshot } from './lib/redSnapshot'
 import './App.css'
 
 function MainApp() {
@@ -39,6 +40,11 @@ function MainApp() {
     setTriageLevel(null)
     setDiseaseRisks(null)
     setTriggeringCondition(null)
+    triggeringConditionRef.current = null
+    setSepsisHighRisk(false)
+    sepsisHighRiskRef.current = false
+    setRedSnapshot(null)
+    setShowDashboard(false)
     setIsStreaming(false)
     setHasVitalsFile(false)
     setVitals({ hr: 80, bpSys: 120, bpDia: 80, resp: 16, temp: 36.5, spo2: 98 })
@@ -60,9 +66,12 @@ function MainApp() {
   
   // 대시보드 모달 상태
   const [showDashboard, setShowDashboard] = useState(false)
+  const [redSnapshot, setRedSnapshot] = useState<RedSnapshot | null>(null)
   
   const wsRef = useRef<WebSocket | null>(null)
   const intervalRef = useRef<number | null>(null)
+  const triggeringConditionRef = useRef<string | null>(null)
+  const sepsisHighRiskRef = useRef(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
@@ -141,8 +150,12 @@ function MainApp() {
       setAppStatus('PROCESSING')
       setDiseaseRisks(null)
       setTriggeringCondition(null)
+      triggeringConditionRef.current = null
       setSepsisHighRisk(false)
+      sepsisHighRiskRef.current = false
       setTriageLevel(null)
+      setRedSnapshot(null)
+      setShowDashboard(false)
       const toastId = toast.loading(
         isDemoMode
           ? `[${modality}] 합성 3D 의료영상 처리 및 메쉬 생성 중...`
@@ -260,13 +273,24 @@ function MainApp() {
           setDiseaseRisks(data.disease_risks)
         }
         if (data.triggering_condition !== undefined) {
+          triggeringConditionRef.current = data.triggering_condition
           setTriggeringCondition(data.triggering_condition)
         }
         if (data.sepsis_high_risk !== undefined) {
-          setSepsisHighRisk(data.sepsis_high_risk)
+          sepsisHighRiskRef.current = Boolean(data.sepsis_high_risk)
+          setSepsisHighRisk(Boolean(data.sepsis_high_risk))
         }
         if (data.triage_level) {
-          setTriageLevel(data.triage_level)
+          const nextTriageLevel = String(data.triage_level)
+          setRedSnapshot(current => reduceRedSnapshot(current, {
+            patientId,
+            triageLevel: nextTriageLevel,
+            lesionVolume,
+            triggeringCondition: triggeringConditionRef.current,
+            hasSepsisRisk: sepsisHighRiskRef.current,
+            modality,
+          }))
+          setTriageLevel(nextTriageLevel)
         }
       }
 
@@ -564,7 +588,13 @@ function MainApp() {
                       
                       {triageLevel.includes('RED') && (
                         <button
-                          onClick={() => setShowDashboard(true)}
+                          onClick={() => {
+                            if (!redSnapshot) {
+                              toast.error('RED 발생 시점 스냅샷을 준비 중입니다. 잠시 후 다시 시도해주세요.')
+                              return
+                            }
+                            setShowDashboard(true)
+                          }}
                           style={{
                             marginTop: '12px',
                             width: '100%',
@@ -606,15 +636,15 @@ function MainApp() {
         </section>
       </main>
 
-      {showDashboard && (
+      {showDashboard && redSnapshot && (
         <EmergencyDashboard 
           onClose={() => setShowDashboard(false)}
-          patientId={patientId}
-          triageLevel={triageLevel}
-          lesionVolume={lesionVolume}
-          triggeringCondition={triggeringCondition}
-          hasSepsisRisk={sepsisHighRisk}
-          modality={modality}
+          patientId={redSnapshot.patientId}
+          triageLevel={redSnapshot.triageLevel}
+          lesionVolume={redSnapshot.lesionVolume}
+          triggeringCondition={redSnapshot.triggeringCondition}
+          hasSepsisRisk={redSnapshot.hasSepsisRisk}
+          modality={redSnapshot.modality}
         />
       )}
     </div>
