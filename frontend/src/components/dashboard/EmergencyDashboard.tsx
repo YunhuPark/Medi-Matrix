@@ -84,13 +84,13 @@ export function EmergencyDashboard({
               <li>
                 <strong>병변 체적 (Vision):</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>{lesionVolume.toLocaleString()} voxels</span>
-                {' '}(위험 수치)
+                {' '}(3D context)
               </li>
               {triggeringCondition && triggeringCondition !== 'Unknown' && (
                 <li>
-                  <strong>Vitals 합병증:</strong>{' '}
+                  <strong>Vitals 위험 패턴:</strong>{' '}
                   <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{triggeringCondition}</span>
-                  {' '}(시뮬레이션)
+                  {' '}(합성 데모)
                 </li>
               )}
               <li><strong>최종 분류:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{triageLevel}</span></li>
