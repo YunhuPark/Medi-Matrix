@@ -24,15 +24,12 @@ const BRAIN_DEMO_CONTEXT = {
   capabilities: ['brain_imaging', 'icu'],
 } as const;
 
-// 기존 패혈증 high-risk 데모와의 하위 호환성 유지용 컨텍스트입니다.
 const SEPSIS_DEMO_CONTEXT = {
   condition: 'sepsis_demo',
   specialties: ['emergency_medicine', 'internal_medicine'],
   capabilities: ['emergency_room', 'icu'],
 } as const;
 
-// RED가 패혈증 하나가 아니라 ARDS-like, Shock-like 등 전신 상태 악화로도 발생할 수 있으므로
-// 특정 진단명을 확정하지 않는 범용 응급 대응 컨텍스트를 별도로 사용합니다.
 const SYSTEMIC_DETERIORATION_CONTEXT = {
   condition: 'systemic_deterioration_demo',
   specialties: ['emergency_medicine', 'internal_medicine'],
@@ -60,11 +57,6 @@ export interface GoldenTimeUrlOptions {
   hasSepsisRisk: boolean;
 }
 
-/**
- * UI에서 사용하는 `RED (초응급 - ...)` 같은 전체 라벨을
- * Golden-Time이 이해하는 정규화된 상태값으로 변환합니다.
- * 허용되지 않은 값은 기존 보수적 동작을 유지해 RED로 처리합니다.
- */
 export function normalizeTriageLevel(triage: string | null): TriageLevel {
   if (!triage) return 'RED';
   const upper = triage.trim().toUpperCase();
@@ -108,8 +100,7 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   if (hasVitals) analysisSources.push('vitals');
 
   if (validatedTriage === 'RED' && hasVitals) {
-    // RED + Vitals는 특정 질환 확정이 아니라 전신 악화 응급상황으로 취급합니다.
-    // 기존 Sepsis-high 경로는 기존 URL 규약을 유지하고, 그 외 RED는 범용 systemic context를 사용합니다.
+    // RED + Vitals는 특정 진단 확정이 아니라 전신 악화 응급상황으로 처리합니다.
     const systemicContext = hasSepsis ? SEPSIS_DEMO_CONTEXT : SYSTEMIC_DETERIORATION_CONTEXT;
     primaryCondition = systemicContext.condition;
     addContext(systemicContext);
@@ -119,9 +110,14 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
       addContext(BRAIN_DEMO_CONTEXT);
     }
   } else if (hasBrain) {
-    // YELLOW/일반 상태에서는 뇌 병변 대응 역량을 중심으로 봅니다.
+    // YELLOW에서는 실제 랭킹이 primaryCondition(뇌 병변) 중심으로 유지됩니다.
+    // 기존 링크 호환성을 위해 Sepsis-high 표시는 secondary로만 보존합니다.
     primaryCondition = BRAIN_DEMO_CONTEXT.condition;
     addContext(BRAIN_DEMO_CONTEXT);
+    if (hasSepsis) {
+      secondaryConditions = SEPSIS_DEMO_CONTEXT.condition;
+      addContext(SEPSIS_DEMO_CONTEXT);
+    }
   } else if (hasSepsis) {
     primaryCondition = SEPSIS_DEMO_CONTEXT.condition;
     addContext(SEPSIS_DEMO_CONTEXT);
