@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildGoldenTimeUrl } from '../lib/goldenTimeUrl';
 
 describe('Golden-Time RED systemic deterioration context', () => {
-  it('RED + Brain + Vitals uses systemic context even when sepsisHighRisk is false', () => {
+  it('RED + Brain + Vitals uses systemic context when sepsisHighRisk is false', () => {
     const url = new URL(buildGoldenTimeUrl({
       triage: 'RED (초응급 - 전신 악화)',
       modality: 'Brain',
@@ -20,6 +20,20 @@ describe('Golden-Time RED systemic deterioration context', () => {
     expect(capabilities).toContain('emergency_room');
     expect(capabilities).toContain('icu');
     expect(capabilities).toContain('brain_imaging');
+  });
+
+  it('RED + Brain + Vitals remains systemic even when Sepsis-like is the highest pattern', () => {
+    const url = new URL(buildGoldenTimeUrl({
+      triage: 'RED (초응급 - 패혈증 유사 위험)',
+      modality: 'Brain',
+      lesionVolume: 21192,
+      vitalsCondition: '패혈증 유사 (Sepsis-like)',
+      hasSepsisRisk: true,
+    }));
+
+    expect(url.searchParams.get('primaryCondition')).toBe('systemic_deterioration_demo');
+    expect(url.searchParams.get('secondaryConditions')).toBe('brain_lesion_demo');
+    expect(url.searchParams.get('vitalsCondition')).toBe('패혈증 유사 (Sepsis-like)');
   });
 
   it('YELLOW + Brain keeps brain as the primary ranking condition', () => {
