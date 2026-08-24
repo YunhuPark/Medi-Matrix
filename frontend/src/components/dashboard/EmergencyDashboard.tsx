@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
 import { buildGoldenTimeUrl } from '../../lib/goldenTimeUrl';
 
@@ -25,22 +24,6 @@ export function EmergencyDashboard({
   lesionVolume,
   modality,
 }: EmergencyDashboardProps) {
-  const onCloseRef = useRef(onClose);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  // When the RED snapshot disappears because the live stream goes back to
-  // YELLOW/GREEN, also reset the parent's open flag. Without this cleanup,
-  // showDashboard can remain true and the next RED snapshot makes the modal
-  // appear again without the user pressing the emergency-search button.
-  useEffect(() => {
-    return () => {
-      onCloseRef.current();
-    };
-  }, []);
-
   const displayTriage = triageLevel?.trim().toUpperCase().startsWith('RED')
     ? 'RED (초응급 - 전신 악화 위험)'
     : triageLevel;
@@ -60,13 +43,16 @@ export function EmergencyDashboard({
   };
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.9)',
-      zIndex: 9999,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontFamily: 'sans-serif'
-    }}>
+    <div
+      data-red-flow-version="manual-systemic-red-v3"
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        zIndex: 9999,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', fontFamily: 'sans-serif'
+      }}
+    >
       <div style={{
         width: '90%', maxWidth: '800px',
         backgroundColor: '#1e1e24', border: '2px solid #ef4444',
