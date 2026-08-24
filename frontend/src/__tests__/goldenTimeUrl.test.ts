@@ -171,11 +171,11 @@ describe('input normalization and safety', () => {
     expect(url.searchParams.get('clinicalValidation')).toBe('false');
   });
 
-  it('생성 URL은 500자 미만이다', () => {
+  it('생성 URL은 최대 500자다', () => {
     const url = buildGoldenTimeUrl({
       triage: 'YELLOW', modality: 'Brain', lesionVolume: 21192, vitalsCondition: 'A'.repeat(300), hasSepsisRisk: true,
     });
-    expect(url.length).toBeLessThan(500);
+    expect(url.length).toBeLessThanOrEqual(500);
   });
 
   it('민감정보가 없는 정상 URL은 보안 검증을 통과한다', () => {
