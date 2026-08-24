@@ -23,50 +23,31 @@ export function EmergencyDashboard({
   const isYellow = normalizedTriage.startsWith('YELLOW');
   const isGreen = normalizedTriage.startsWith('GREEN');
 
-  const theme = isRed
-    ? {
-        accent: '#ef4444',
-        soft: 'rgba(239, 68, 68, 0.1)',
-        shadow: 'rgba(239, 68, 68, 0.3)',
-        light: '#fca5a5',
-        title: '중증 응급 환자 발생 (CODE RED)',
-        status: '전신 악화 위험 신호 감지',
-      }
+  // 응급 모달 자체는 최초 CODE RED 발생으로 열린 창이므로 항상 RED 디자인을 유지합니다.
+  // 실시간 상태 변화는 Vitals 상태와 최종 분류 두 곳에만 색상/문구로 반영합니다.
+  const liveStatusColor = isRed
+    ? '#ef4444'
     : isYellow
-      ? {
-          accent: '#eab308',
-          soft: 'rgba(234, 179, 8, 0.1)',
-          shadow: 'rgba(234, 179, 8, 0.3)',
-          light: '#fde047',
-          title: '집중 모니터링 필요 (YELLOW)',
-          status: '집중 모니터링 필요',
-        }
+      ? '#eab308'
       : isGreen
-        ? {
-            accent: '#22c55e',
-            soft: 'rgba(34, 197, 94, 0.1)',
-            shadow: 'rgba(34, 197, 94, 0.3)',
-            light: '#86efac',
-            title: '환자 상태 안정화 (GREEN)',
-            status: '안정 범위 모니터링',
-          }
-        : {
-            accent: '#f59e0b',
-            soft: 'rgba(245, 158, 11, 0.1)',
-            shadow: 'rgba(245, 158, 11, 0.3)',
-            light: '#fcd34d',
-            title: '환자 상태 모니터링',
-            status: '현재 상태 확인',
-          };
+        ? '#22c55e'
+        : '#f59e0b';
+
+  const liveVitalsStatus = isRed
+    ? '전신 악화 위험 신호 감지'
+    : isYellow
+      ? '집중 모니터링 필요'
+      : isGreen
+        ? '안정 범위 모니터링'
+        : '현재 상태 확인';
 
   const displayTriage = isRed
     ? 'RED (초응급 - 전신 악화 위험)'
     : triageLevel;
 
   const handleGoldenTimeRedirect = () => {
-    // 기존 YELLOW / RED 분기를 그대로 사용합니다.
-    // RED 안에서만 ARDS-like / Sepsis-like / Shock-like를 하나의
-    // systemic_deterioration_demo 경로로 통일합니다.
+    // 현재 실시간 응급도를 그대로 전달해 기존 YELLOW / RED 병원 탐색 분기를 사용합니다.
+    // RED 내부에서만 ARDS-like / Sepsis-like / Shock-like가 공통 systemic 경로를 사용합니다.
     const url = buildGoldenTimeUrl({
       triage: triageLevel,
       modality,
@@ -89,7 +70,7 @@ export function EmergencyDashboard({
 
   return (
     <div
-      data-triage-flow-version="live-yellow-red-v1"
+      data-triage-flow-version="red-shell-live-status-v2"
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -100,9 +81,9 @@ export function EmergencyDashboard({
     >
       <div style={{
         width: '90%', maxWidth: '800px',
-        backgroundColor: '#1e1e24', border: `2px solid ${theme.accent}`,
+        backgroundColor: '#1e1e24', border: '2px solid #ef4444',
         borderRadius: '12px', padding: '2rem',
-        boxShadow: `0 0 30px ${theme.shadow}`,
+        boxShadow: '0 0 30px rgba(239, 68, 68, 0.3)',
         position: 'relative'
       }}>
         <button
@@ -112,10 +93,10 @@ export function EmergencyDashboard({
           <X size={24} />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', borderBottom: `1px solid ${theme.accent}`, paddingBottom: '1rem' }}>
-          <ShieldAlert size={48} color={theme.accent} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #ef4444', paddingBottom: '1rem' }}>
+          <ShieldAlert size={48} color="#ef4444" />
           <div>
-            <h1 style={{ margin: 0, color: theme.accent, fontSize: '2rem' }}>{theme.title}</h1>
+            <h1 style={{ margin: 0, color: '#ef4444', fontSize: '2rem' }}>중증 응급 환자 발생 (CODE RED)</h1>
             <p style={{ margin: '4px 0 0 0', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
               합성 데이터 분석 데모 | 임상 진단 아님 · 공모전 프로토타입
             </p>
@@ -140,10 +121,13 @@ export function EmergencyDashboard({
               </li>
               <li>
                 <strong>Vitals 상태:</strong>{' '}
-                <span style={{ color: theme.accent, fontWeight: 'bold' }}>{theme.status}</span>
+                <span style={{ color: liveStatusColor, fontWeight: 'bold' }}>{liveVitalsStatus}</span>
                 {' '}(합성 데모)
               </li>
-              <li><strong>최종 분류:</strong> <span style={{ color: theme.accent, fontWeight: 'bold' }}>{displayTriage}</span></li>
+              <li>
+                <strong>최종 분류:</strong>{' '}
+                <span style={{ color: liveStatusColor, fontWeight: 'bold' }}>{displayTriage}</span>
+              </li>
             </ul>
             <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
               * ARDS-like / Sepsis-like / Shock-like 점수는 왼쪽 실시간 Vitals 패널의 참고 신호이며, RED 내부의 병원 탐색 경로만 공통 처리합니다.
@@ -178,15 +162,13 @@ export function EmergencyDashboard({
 
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '1rem',
-                backgroundColor: theme.soft, padding: '1rem',
-                borderRadius: '8px', border: `1px solid ${theme.accent}`
+                backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '1rem',
+                borderRadius: '8px', border: '1px solid #ef4444'
               }}>
-                <AlertTriangle size={32} color={theme.accent} />
+                <AlertTriangle size={32} color="#ef4444" />
                 <div>
-                  <p style={{ margin: 0, color: theme.accent, fontSize: '0.9rem', fontWeight: 'bold' }}>
-                    {isRed ? '⚠️ 신속한 병상 수배 요망' : isYellow ? '⚠️ 집중 모니터링 대응 병원 탐색' : '현재 상태 기반 병원 탐색'}
-                  </p>
-                  <h2 style={{ margin: 0, color: theme.light, fontSize: '1.1rem' }}>Golden Time 시스템으로 연결합니다.</h2>
+                  <p style={{ margin: 0, color: '#ef4444', fontSize: '0.9rem', fontWeight: 'bold' }}>⚠️ 신속한 병상 수배 요망</p>
+                  <h2 style={{ margin: 0, color: '#fca5a5', fontSize: '1.1rem' }}>Golden Time 시스템으로 연결합니다.</h2>
                 </div>
               </div>
 
