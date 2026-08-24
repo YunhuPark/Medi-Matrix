@@ -22,7 +22,7 @@ describe('Golden-Time RED systemic deterioration context', () => {
     expect(capabilities).toContain('brain_imaging');
   });
 
-  it('YELLOW + Brain remains brain-response focused', () => {
+  it('YELLOW + Brain keeps brain as the primary ranking condition', () => {
     const url = new URL(buildGoldenTimeUrl({
       triage: 'YELLOW (응급 - 집중 관찰)',
       modality: 'Brain',
@@ -33,6 +33,6 @@ describe('Golden-Time RED systemic deterioration context', () => {
 
     expect(url.searchParams.get('triage')).toBe('YELLOW');
     expect(url.searchParams.get('primaryCondition')).toBe('brain_lesion_demo');
-    expect(url.searchParams.has('secondaryConditions')).toBe(false);
+    expect(url.searchParams.get('secondaryConditions')).toBe('sepsis_demo');
   });
 });
