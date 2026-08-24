@@ -1,4 +1,4 @@
-
+import { useRef } from 'react';
 import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
 import { buildGoldenTimeUrl } from '../../lib/goldenTimeUrl';
 
@@ -27,13 +27,27 @@ export function EmergencyDashboard({
   hasSepsisRisk,
   modality,
 }: EmergencyDashboardProps) {
+  // RED 대시보드가 열린 순간의 상태를 고정합니다.
+  // 스트리밍이 계속 진행되며 ARDS-like → Sepsis-like처럼 최고 위험 패턴이
+  // 바뀌더라도, 사용자가 보고 있는 응급 리포트와 Golden-Time 전달 값은
+  // 최초 RED 스냅샷을 유지합니다.
+  const snapshotRef = useRef({
+    patientId,
+    triageLevel,
+    lesionVolume,
+    triggeringCondition,
+    hasSepsisRisk,
+    modality,
+  });
+  const snapshot = snapshotRef.current;
+
   const handleGoldenTimeRedirect = () => {
     const url = buildGoldenTimeUrl({
-      triage: triageLevel,
-      modality,
-      lesionVolume,
-      vitalsCondition: triggeringCondition,
-      hasSepsisRisk,
+      triage: snapshot.triageLevel,
+      modality: snapshot.modality,
+      lesionVolume: snapshot.lesionVolume,
+      vitalsCondition: snapshot.triggeringCondition,
+      hasSepsisRisk: snapshot.hasSepsisRisk,
     });
     window.open(url, '_blank');
   };
@@ -74,29 +88,29 @@ export function EmergencyDashboard({
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px' }}>
             <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>합성 데이터 분석 리포트</h3>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: '1.8' }}>
-              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
+              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{snapshot.patientId || 'Unknown'}</span></li>
               <li>
                 <strong>모달리티:</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>
-                  {modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
+                  {snapshot.modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
                 </span>
               </li>
               <li>
                 <strong>병변 체적 (Vision):</strong>{' '}
-                <span style={{ color: '#60a5fa' }}>{lesionVolume.toLocaleString()} voxels</span>
+                <span style={{ color: '#60a5fa' }}>{snapshot.lesionVolume.toLocaleString()} voxels</span>
                 {' '}(3D context)
               </li>
-              {triggeringCondition && triggeringCondition !== 'Unknown' && (
+              {snapshot.triggeringCondition && snapshot.triggeringCondition !== 'Unknown' && (
                 <li>
-                  <strong>Vitals 위험 패턴:</strong>{' '}
-                  <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{triggeringCondition}</span>
+                  <strong>RED 발생 시 Vitals 주요 위험 패턴:</strong>{' '}
+                  <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{snapshot.triggeringCondition}</span>
                   {' '}(합성 데모)
                 </li>
               )}
-              <li><strong>최종 분류:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{triageLevel}</span></li>
+              <li><strong>최종 분류:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{snapshot.triageLevel}</span></li>
             </ul>
             <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-              * 표시 수치는 합성 데이터 기반 데모이며 임상 진단 결과가 아닙니다.
+              * RED 발생 시점의 스냅샷입니다. 표시 수치는 합성 데이터 기반 데모이며 임상 진단 결과가 아닙니다.
             </p>
           </div>
 
@@ -104,13 +118,13 @@ export function EmergencyDashboard({
             <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>환자 이송 프로토콜</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {modality === 'Brain' ? (
+              {snapshot.modality === 'Brain' ? (
                 <div style={{
                   backgroundColor: 'rgba(96, 165, 250, 0.1)', padding: '0.75rem',
                   borderRadius: '8px', border: '1px solid #60a5fa', fontSize: '0.85rem', color: '#93c5fd'
                 }}>
-                  <strong>🧠 뇌 병변 대응 병원 탐색</strong><br />
-                  신경외과·신경과 적합 + 응급수술·뇌 영상 가능 병원을 우선 탐색합니다.<br />
+                  <strong>🧠 뇌 병변 + 전신악화 대응 병원 탐색</strong><br />
+                  RED에서는 특정 질환을 확정하지 않고 응급실·ICU·뇌 영상·수술 자원을 함께 확인합니다.<br />
                   <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>공개 응급의료 정보 기반 추천 (임상 진단 아님)</span>
                 </div>
               ) : (
@@ -118,9 +132,9 @@ export function EmergencyDashboard({
                   backgroundColor: 'rgba(251, 191, 36, 0.1)', padding: '0.75rem',
                   borderRadius: '8px', border: '1px solid #fbbf24', fontSize: '0.85rem', color: '#fcd34d'
                 }}>
-                  <strong>⚠️ {modality} 모드 특화 추천 미지원</strong><br />
-                  현재 {modality} 분석의 특화 병원 매칭은 지원되지 않습니다.<br />
-                  일반 응급실 가용 병상 기준으로 탐색합니다.
+                  <strong>⚠️ {snapshot.modality} 모드 특화 추천 미지원</strong><br />
+                  RED에서는 특정 질환을 확정하지 않고 응급실·ICU 등 전신악화 대응 자원을 우선 확인합니다.<br />
+                  공개 응급의료 가용자원을 기준으로 탐색합니다.
                 </div>
               )}
 
