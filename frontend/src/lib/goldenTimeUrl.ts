@@ -9,24 +9,15 @@
  * - VITE_GOLDEN_TIME_URL 환경변수를 사용, 없으면 production 기본값
  */
 
-// -----------------------------------------------------------------
-// 허용 목록 상수 (Golden-Time MediMatrixParams.ts와 일치해야 함)
-// -----------------------------------------------------------------
 export const ALLOWED_MODALITIES = ['Brain', 'Lung'] as const;
 export type ModalityType = (typeof ALLOWED_MODALITIES)[number];
 
 const ALLOWED_TRIAGE = ['RED', 'ORANGE', 'YELLOW', 'GREEN'] as const;
 export type TriageLevel = (typeof ALLOWED_TRIAGE)[number];
 
-/** vitalsCondition 최대 길이 */
 const MAX_VITALS_CONDITION_LENGTH = 120;
-
-/** URL 최대 허용 길이 */
 const MAX_URL_LENGTH = 500;
 
-// -----------------------------------------------------------------
-// 컨텍스트 상수 (Golden-Time 매핑용)
-// -----------------------------------------------------------------
 const BRAIN_DEMO_CONTEXT = {
   condition: 'brain_lesion_demo',
   specialties: ['neurosurgery', 'neurology'],
@@ -39,73 +30,50 @@ const SEPSIS_DEMO_CONTEXT = {
   capabilities: ['icu'],
 } as const;
 
-// -----------------------------------------------------------------
-// 환경변수 검증
-// -----------------------------------------------------------------
-/**
- * Golden-Time 기본 URL을 반환합니다.
- * VITE_GOLDEN_TIME_URL 환경변수가 있으면 우선 사용하며 https만 허용합니다.
- * 설정이 없으면 production 기본값을 사용합니다.
- *
- * @throws 허용되지 않은 프로토콜인 경우
- */
 export function getGoldenTimeBaseUrl(): string {
   const envUrl = import.meta.env.VITE_GOLDEN_TIME_URL as string | undefined;
-
   if (envUrl) {
-    // 허용된 프로토콜 검사 (https only)
     if (!envUrl.startsWith('https://')) {
       throw new Error(
         `[goldenTimeUrl] VITE_GOLDEN_TIME_URL must start with https://. Got: ${envUrl.slice(0, 20)}...`
       );
     }
-    // trailing slash 제거
     return envUrl.replace(/\/+$/, '');
   }
-
-  // production 기본값 (하드코딩이지만 선택지가 없는 경우에만)
   return 'https://golden-time.vercel.app';
 }
 
-// -----------------------------------------------------------------
-// 파라미터 빌더
-// -----------------------------------------------------------------
-
 export interface GoldenTimeUrlOptions {
-  /** 응급 중증도 (허용 목록에 없으면 'RED' 사용) */
   triage: string | null;
-  /** MRI 분석 모달리티 */
   modality: ModalityType;
-  /** 병변 체적 (voxels, 숫자) */
   lesionVolume: number;
-  /**
-   * WebSocket Vitals 스트리밍에서 전달된 합병증 조건 (화면 표시용, 점수 계산 미사용).
-   * null이거나 'Unknown'이면 미전송.
-   */
   vitalsCondition?: string | null;
-  /**
-   * 구조화된 패혈증 위험 상태 (문자열 파싱 의존 제거)
-   */
   hasSepsisRisk: boolean;
 }
 
 /**
- * Golden-Time 리디렉션 URL을 생성합니다.
- *
- * @returns 완전한 https URL 문자열
- * @throws VITE_GOLDEN_TIME_URL이 잘못된 경우
+ * UI에서 사용하는 `RED (초응급 - ...)` 같은 전체 라벨을
+ * Golden-Time이 이해하는 정규화된 상태값으로 변환합니다.
+ * 허용되지 않은 값은 기존 보수적 동작을 유지해 RED로 처리합니다.
  */
+export function normalizeTriageLevel(triage: string | null): TriageLevel {
+  if (!triage) return 'RED';
+  const upper = triage.trim().toUpperCase();
+  for (const level of ALLOWED_TRIAGE) {
+    if (upper === level || upper.startsWith(`${level} `) || upper.startsWith(`${level}(`)) {
+      return level;
+    }
+  }
+  return 'RED';
+}
+
 export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   const { triage, modality, lesionVolume, vitalsCondition, hasSepsisRisk } = options;
-
   const baseUrl = getGoldenTimeBaseUrl();
   const params = new URLSearchParams();
 
-  // triage: 허용 목록 검증
-  const validatedTriage = ALLOWED_TRIAGE.includes(triage as TriageLevel) ? triage! : 'RED';
+  const validatedTriage = normalizeTriageLevel(triage);
   params.set('triage', validatedTriage);
-
-  // 항상 포함
   params.set('analysisMode', 'synthetic_demo');
   params.set('clinicalValidation', 'false');
 
@@ -118,12 +86,8 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
   const capabilities = new Set<string>();
   const specialties = new Set<string>();
 
-  if (hasBrain) {
-    analysisSources.push('mri');
-  }
-  if (vitalsCondition && vitalsCondition !== 'Unknown') {
-    analysisSources.push('vitals');
-  }
+  if (hasBrain) analysisSources.push('mri');
+  if (vitalsCondition && vitalsCondition !== 'Unknown') analysisSources.push('vitals');
 
   if (hasBrain && hasSepsis) {
     if (validatedTriage === 'RED') {
@@ -146,56 +110,35 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
     SEPSIS_DEMO_CONTEXT.capabilities.forEach(c => capabilities.add(c));
     SEPSIS_DEMO_CONTEXT.specialties.forEach(s => specialties.add(s));
   } else {
-    // Lung 등 미구현 모달리티
     primaryCondition = 'unsupported_modality';
   }
 
-  if (analysisSources.length > 0) {
-    params.set('analysisSources', analysisSources.join(','));
-  }
-  
+  if (analysisSources.length > 0) params.set('analysisSources', analysisSources.join(','));
   if (primaryCondition) {
     params.set('primaryCondition', primaryCondition);
-    params.set('condition', primaryCondition); // 하위 호환성
+    params.set('condition', primaryCondition);
   }
-  if (secondaryConditions) {
-    params.set('secondaryConditions', secondaryConditions);
-  }
-  if (capabilities.size > 0) {
-    params.set('capabilities', Array.from(capabilities).join(','));
-  }
-  if (specialties.size > 0) {
-    params.set('specialties', Array.from(specialties).join(','));
-  }
+  if (secondaryConditions) params.set('secondaryConditions', secondaryConditions);
+  if (capabilities.size > 0) params.set('capabilities', Array.from(capabilities).join(','));
+  if (specialties.size > 0) params.set('specialties', Array.from(specialties).join(','));
 
-  // vitalsCondition: 화면 표시용, 길이 제한
   if (vitalsCondition && vitalsCondition !== 'Unknown') {
-    const trimmed = vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH);
-    params.set('vitalsCondition', trimmed);
+    params.set('vitalsCondition', vitalsCondition.slice(0, MAX_VITALS_CONDITION_LENGTH));
   }
 
-  // 병변 부피 (숫자만, 민감정보 아님)
   params.set('volume', String(Math.round(lesionVolume)));
 
   const url = `${baseUrl}/?${params.toString()}`;
-
-  // 길이 초과 방지 (최대 500자)
   if (url.length > MAX_URL_LENGTH) {
     params.delete('vitalsCondition');
     return `${baseUrl}/?${params.toString()}`;
   }
-
   return url;
 }
 
-// -----------------------------------------------------------------
-// 보안 검증 유틸 (테스트에서도 사용)
-// -----------------------------------------------------------------
-
-/** URL에 민감정보 패턴이 없는지 검사 */
 export function assertNoSensitiveData(url: string): void {
   const SENSITIVE_PATTERNS = [
-    /eyJ[A-Za-z0-9+/]+=*/,        // JWT (Base64)
+    /eyJ[A-Za-z0-9+/]+=*/,
     /access_token/i,
     /authorization/i,
     /patient_?id/i,
