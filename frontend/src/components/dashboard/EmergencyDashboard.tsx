@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
 import { buildGoldenTimeUrl } from '../../lib/goldenTimeUrl';
 
@@ -8,13 +8,13 @@ interface EmergencyDashboardProps {
   triageLevel: string | null;
   lesionVolume: number;
   /**
-   * triggeringCondition: WebSocket Vitals 스트리밍에서 전달된 합병증 조건.
-   * null인 경우 Brain 모드 기본 컨텍스트를 사용하며, 'Unknown'은 절대 전달하지 않습니다.
+   * Live Vitals may move between ARDS-like / Sepsis-like / Shock-like while RED.
+   * This value is intentionally not used to choose the Golden-Time RED route.
    */
   triggeringCondition: string | null;
-  /** 구조화된 패혈증 위험 상태 (문자열 파싱 의존 제거) */
+  /** Backward-compatible live risk flag; not used to choose the RED route. */
   hasSepsisRisk: boolean;
-  /** MRI 분석 모달리티 ('Brain' | 'Lung') */
+  /** MRI analysis modality ('Brain' | 'Lung') */
   modality: 'Brain' | 'Lung';
 }
 
@@ -23,31 +23,38 @@ export function EmergencyDashboard({
   patientId,
   triageLevel,
   lesionVolume,
-  triggeringCondition,
-  hasSepsisRisk,
   modality,
 }: EmergencyDashboardProps) {
-  // RED 대시보드가 열린 순간의 상태를 고정합니다.
-  // 스트리밍이 계속 진행되며 ARDS-like → Sepsis-like처럼 최고 위험 패턴이
-  // 바뀌더라도, 사용자가 보고 있는 응급 리포트와 Golden-Time 전달 값은
-  // 최초 RED 스냅샷을 유지합니다.
-  const snapshotRef = useRef({
-    patientId,
-    triageLevel,
-    lesionVolume,
-    triggeringCondition,
-    hasSepsisRisk,
-    modality,
-  });
-  const snapshot = snapshotRef.current;
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // When the RED snapshot disappears because the live stream goes back to
+  // YELLOW/GREEN, also reset the parent's open flag. Without this cleanup,
+  // showDashboard can remain true and the next RED snapshot makes the modal
+  // appear again without the user pressing the emergency-search button.
+  useEffect(() => {
+    return () => {
+      onCloseRef.current();
+    };
+  }, []);
+
+  const displayTriage = triageLevel?.trim().toUpperCase().startsWith('RED')
+    ? 'RED (초응급 - 전신 악화 위험)'
+    : triageLevel;
 
   const handleGoldenTimeRedirect = () => {
+    // CODE RED routing is deliberately subtype-neutral.
+    // ARDS-like / Sepsis-like / Shock-like remain visible only in the live
+    // Vitals panel and must never create different Golden-Time destinations.
     const url = buildGoldenTimeUrl({
-      triage: snapshot.triageLevel,
-      modality: snapshot.modality,
-      lesionVolume: snapshot.lesionVolume,
-      vitalsCondition: snapshot.triggeringCondition,
-      hasSepsisRisk: snapshot.hasSepsisRisk,
+      triage: 'RED',
+      modality,
+      lesionVolume,
+      vitalsCondition: null,
+      hasSepsisRisk: false,
     });
     window.open(url, '_blank');
   };
@@ -88,29 +95,27 @@ export function EmergencyDashboard({
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px' }}>
             <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>합성 데이터 분석 리포트</h3>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: '1.8' }}>
-              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{snapshot.patientId || 'Unknown'}</span></li>
+              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
               <li>
                 <strong>모달리티:</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>
-                  {snapshot.modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
+                  {modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
                 </span>
               </li>
               <li>
                 <strong>병변 체적 (Vision):</strong>{' '}
-                <span style={{ color: '#60a5fa' }}>{snapshot.lesionVolume.toLocaleString()} voxels</span>
+                <span style={{ color: '#60a5fa' }}>{lesionVolume.toLocaleString()} voxels</span>
                 {' '}(3D context)
               </li>
-              {snapshot.triggeringCondition && snapshot.triggeringCondition !== 'Unknown' && (
-                <li>
-                  <strong>RED 발생 시 Vitals 주요 위험 패턴:</strong>{' '}
-                  <span style={{ color: '#f472b6', fontWeight: 'bold' }}>{snapshot.triggeringCondition}</span>
-                  {' '}(합성 데모)
-                </li>
-              )}
-              <li><strong>최종 분류:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{snapshot.triageLevel}</span></li>
+              <li>
+                <strong>Vitals 상태:</strong>{' '}
+                <span style={{ color: '#f472b6', fontWeight: 'bold' }}>전신 악화 위험 신호 감지</span>
+                {' '}(합성 데모)
+              </li>
+              <li><strong>최종 분류:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{displayTriage}</span></li>
             </ul>
             <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-              * RED 발생 시점의 스냅샷입니다. 표시 수치는 합성 데이터 기반 데모이며 임상 진단 결과가 아닙니다.
+              * ARDS-like / Sepsis-like / Shock-like 점수는 왼쪽 실시간 Vitals 패널의 참고 신호이며, CODE RED 병원 탐색 경로를 나누지 않습니다.
             </p>
           </div>
 
@@ -118,13 +123,13 @@ export function EmergencyDashboard({
             <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>환자 이송 프로토콜</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {snapshot.modality === 'Brain' ? (
+              {modality === 'Brain' ? (
                 <div style={{
                   backgroundColor: 'rgba(96, 165, 250, 0.1)', padding: '0.75rem',
                   borderRadius: '8px', border: '1px solid #60a5fa', fontSize: '0.85rem', color: '#93c5fd'
                 }}>
                   <strong>🧠 뇌 병변 + 전신악화 대응 병원 탐색</strong><br />
-                  RED에서는 특정 질환을 확정하지 않고 응급실·ICU·뇌 영상·수술 자원을 함께 확인합니다.<br />
+                  CODE RED에서는 ARDS-like·Sepsis-like·Shock-like 중 무엇이 높든 동일하게 응급실·ICU·뇌 영상·수술 자원을 확인합니다.<br />
                   <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>공개 응급의료 정보 기반 추천 (임상 진단 아님)</span>
                 </div>
               ) : (
@@ -132,8 +137,8 @@ export function EmergencyDashboard({
                   backgroundColor: 'rgba(251, 191, 36, 0.1)', padding: '0.75rem',
                   borderRadius: '8px', border: '1px solid #fbbf24', fontSize: '0.85rem', color: '#fcd34d'
                 }}>
-                  <strong>⚠️ {snapshot.modality} 모드 특화 추천 미지원</strong><br />
-                  RED에서는 특정 질환을 확정하지 않고 응급실·ICU 등 전신악화 대응 자원을 우선 확인합니다.<br />
+                  <strong>⚠️ {modality} 모드 특화 추천 미지원</strong><br />
+                  CODE RED에서는 ARDS-like·Sepsis-like·Shock-like 중 무엇이 높든 동일하게 응급실·ICU 등 전신악화 대응 자원을 우선 확인합니다.<br />
                   공개 응급의료 가용자원을 기준으로 탐색합니다.
                 </div>
               )}
