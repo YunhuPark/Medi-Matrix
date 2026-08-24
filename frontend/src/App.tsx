@@ -44,6 +44,7 @@ function MainApp() {
     setSepsisHighRisk(false)
     sepsisHighRiskRef.current = false
     setRedSnapshot(null)
+    setDashboardSnapshot(null)
     setShowDashboard(false)
     setIsStreaming(false)
     setHasVitalsFile(false)
@@ -64,9 +65,12 @@ function MainApp() {
   const [vitals, setVitals] = useState({ hr: 80, bpSys: 120, bpDia: 80, resp: 16, temp: 36.5, spo2: 98 })
   const [hasVitalsFile, setHasVitalsFile] = useState(false)
   
-  // 대시보드 모달 상태
-  const [showDashboard, setShowDashboard] = useState(false)
+  // RED episode snapshot: live episode용. YELLOW로 내려가면 다음 RED를 위해 초기화됩니다.
   const [redSnapshot, setRedSnapshot] = useState<RedSnapshot | null>(null)
+  // Dashboard snapshot: 사용자가 응급창을 연 순간 별도로 고정합니다.
+  // 이후 라이브 응급도가 YELLOW/GREEN으로 변해도 X를 누르기 전까지 유지합니다.
+  const [dashboardSnapshot, setDashboardSnapshot] = useState<RedSnapshot | null>(null)
+  const [showDashboard, setShowDashboard] = useState(false)
   
   const wsRef = useRef<WebSocket | null>(null)
   const intervalRef = useRef<number | null>(null)
@@ -155,6 +159,7 @@ function MainApp() {
       sepsisHighRiskRef.current = false
       setTriageLevel(null)
       setRedSnapshot(null)
+      setDashboardSnapshot(null)
       setShowDashboard(false)
       const toastId = toast.loading(
         isDemoMode
@@ -282,15 +287,10 @@ function MainApp() {
         }
         if (data.triage_level) {
           const nextTriageLevel = String(data.triage_level)
-          const isRed = nextTriageLevel.trim().toUpperCase().startsWith('RED')
 
-          // EmergencyDashboard is strictly user-opened. Once the live episode
-          // leaves RED, close it and clear the open flag so a later RED cannot
-          // make the modal reappear without another button click.
-          if (!isRed) {
-            setShowDashboard(false)
-          }
-
+          // 라이브 RED episode 스냅샷은 다음 RED episode를 위해 YELLOW/GREEN에서
+          // 초기화할 수 있지만, 이미 열린 EmergencyDashboard는 dashboardSnapshot을
+          // 사용하므로 라이브 응급도 변경에 의해 자동으로 닫히지 않습니다.
           setRedSnapshot(current => reduceRedSnapshot(current, {
             patientId,
             triageLevel: nextTriageLevel,
@@ -377,6 +377,14 @@ function MainApp() {
     if (level.includes('YELLOW')) return '#eab308';
     if (level.includes('GREEN')) return '#22c55e';
     return '#fff';
+  }
+
+  const getTriageDisplayText = (level: string | null) => {
+    if (!level) return '';
+    if (level.trim().toUpperCase().startsWith('RED')) {
+      return 'RED (초응급 - 전신 악화 위험)';
+    }
+    return level;
   }
 
   return (
@@ -587,7 +595,7 @@ function MainApp() {
                         <strong style={{ color: '#fff' }}>
                           {isDemoMode ? '[최종 응급도] 시뮬레이션 기반 응급도 분류:' : '[최종 응급도] Multi-modal Triage:'}
                         </strong><br/>
-                        <span style={{ color: getTriageColor(triageLevel), fontWeight: 'bold', fontSize: '1.3rem' }}>{triageLevel}</span>
+                        <span style={{ color: getTriageColor(triageLevel), fontWeight: 'bold', fontSize: '1.3rem' }}>{getTriageDisplayText(triageLevel)}</span>
                       </p>
                       {isDemoMode && (
                         <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '4px' }}>
@@ -602,6 +610,7 @@ function MainApp() {
                               toast.error('RED 발생 시점 스냅샷을 준비 중입니다. 잠시 후 다시 시도해주세요.')
                               return
                             }
+                            setDashboardSnapshot({ ...redSnapshot })
                             setShowDashboard(true)
                           }}
                           style={{
@@ -645,15 +654,18 @@ function MainApp() {
         </section>
       </main>
 
-      {showDashboard && redSnapshot && (
+      {showDashboard && dashboardSnapshot && (
         <EmergencyDashboard 
-          onClose={() => setShowDashboard(false)}
-          patientId={redSnapshot.patientId}
-          triageLevel={redSnapshot.triageLevel}
-          lesionVolume={redSnapshot.lesionVolume}
-          triggeringCondition={redSnapshot.triggeringCondition}
-          hasSepsisRisk={redSnapshot.hasSepsisRisk}
-          modality={redSnapshot.modality}
+          onClose={() => {
+            setShowDashboard(false)
+            setDashboardSnapshot(null)
+          }}
+          patientId={dashboardSnapshot.patientId}
+          triageLevel={dashboardSnapshot.triageLevel}
+          lesionVolume={dashboardSnapshot.lesionVolume}
+          triggeringCondition={dashboardSnapshot.triggeringCondition}
+          hasSepsisRisk={dashboardSnapshot.hasSepsisRisk}
+          modality={dashboardSnapshot.modality}
         />
       )}
     </div>
