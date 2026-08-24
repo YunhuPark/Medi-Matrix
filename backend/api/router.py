@@ -343,29 +343,33 @@ async def triage_websocket_stream(websocket: WebSocket):
 
             probs = mamba_predictor.predict([row])
 
-            # Volume을 추가 피처로 활용 (Multi-modal 앙상블)
-            volume_factor = min(volume / 20000.0, 0.5)
-
-            # 각 병증별 최종 확률 계산 (Volume factor 보정)
-            final_sepsis = min(probs["sepsis"] + volume_factor, 1.0)
-            final_ards = min(probs["ards"] + volume_factor, 1.0)
-            final_shock = min(probs["shock"] + volume_factor, 1.0)
+            # Time-series 위험 점수는 Vitals만으로 계산합니다.
+            # 영상 병변 volume은 질환 점수에 직접 더하지 않고 최종 Triage의 제한된
+            # context 보정값으로만 사용해 Vision/Time-series 신호를 분리합니다.
+            final_sepsis = max(0.0, min(float(probs["sepsis"]), 0.99))
+            final_ards = max(0.0, min(float(probs["ards"]), 0.99))
+            final_shock = max(0.0, min(float(probs["shock"]), 0.99))
 
             max_prob = max(final_sepsis, final_ards, final_shock)
+            vision_context = min(volume / 200000.0, 0.12)
+            triage_score = min(max_prob + vision_context, 0.99)
 
-            # 어떤 병증이 가장 높은 위험도를 갖는지 식별
+            # 어떤 Vitals 유사 패턴이 가장 높은 위험도를 갖는지 식별
             triggering_condition = "Unknown"
-            if max_prob == final_sepsis: triggering_condition = "패혈증 (Sepsis)"
-            elif max_prob == final_ards: triggering_condition = "급성 호흡곤란 증후군 (ARDS)"
-            elif max_prob == final_shock: triggering_condition = "저혈량성 쇼크 (Hypovolemic Shock)"
+            if max_prob == final_sepsis:
+                triggering_condition = "패혈증 유사 (Sepsis-like)"
+            elif max_prob == final_ards:
+                triggering_condition = "ARDS 유사 (ARDS-like)"
+            elif max_prob == final_shock:
+                triggering_condition = "쇼크 유사 (Shock-like)"
 
-            # 확률에 따른 Triage 결정
-            if max_prob > 0.8:
+            # 합성 데모용 Triage: Stable -> GREEN, Warning -> YELLOW, Critical -> RED
+            if triage_score >= 0.75:
                 triage_level = f"RED (초응급 - {triggering_condition} 위험)"
-            elif max_prob > 0.5:
+            elif triage_score >= 0.25:
                 triage_level = "YELLOW (응급 - 집중 모니터링)"
             else:
-                triage_level = "GREEN (안정 - 일반 병동 관찰)"
+                triage_level = "GREEN (안정 - 일반 관찰)"
 
             # 4. 실시간 결과 및 진짜 생체 데이터 스트리밍 전송
             response_payload = {
@@ -383,9 +387,13 @@ async def triage_websocket_stream(websocket: WebSocket):
                     "ards": f"{(final_ards * 100):.1f}%",
                     "shock": f"{(final_shock * 100):.1f}%"
                 },
-                "triggering_condition": triggering_condition if max_prob > 0.8 else None,
+                "triggering_condition": triggering_condition if triage_score >= 0.75 else None,
                 "triage_level": triage_level,
-                "sepsis_high_risk": True if (max_prob > 0.8 and max_prob == final_sepsis) else False
+                "sepsis_high_risk": bool(
+                    triage_score >= 0.75
+                    and final_sepsis == max_prob
+                    and final_sepsis >= 0.60
+                )
             }
 
             await websocket.send_json(response_payload)
