@@ -282,6 +282,15 @@ function MainApp() {
         }
         if (data.triage_level) {
           const nextTriageLevel = String(data.triage_level)
+          const isRed = nextTriageLevel.trim().toUpperCase().startsWith('RED')
+
+          // EmergencyDashboard is strictly user-opened. Once the live episode
+          // leaves RED, close it and clear the open flag so a later RED cannot
+          // make the modal reappear without another button click.
+          if (!isRed) {
+            setShowDashboard(false)
+          }
+
           setRedSnapshot(current => reduceRedSnapshot(current, {
             patientId,
             triageLevel: nextTriageLevel,
