@@ -65,10 +65,10 @@ function MainApp() {
   const [vitals, setVitals] = useState({ hr: 80, bpSys: 120, bpDia: 80, resp: 16, temp: 36.5, spo2: 98 })
   const [hasVitalsFile, setHasVitalsFile] = useState(false)
   
-  // RED episode snapshot: live episode용. YELLOW로 내려가면 다음 RED를 위해 초기화됩니다.
+  // RED episode snapshot: RED 최초 진입 시점을 보존합니다.
   const [redSnapshot, setRedSnapshot] = useState<RedSnapshot | null>(null)
-  // Dashboard snapshot: 사용자가 응급창을 연 순간 별도로 고정합니다.
-  // 이후 라이브 응급도가 YELLOW/GREEN으로 변해도 X를 누르기 전까지 유지합니다.
+  // Dashboard snapshot: YELLOW 또는 RED에서 사용자가 상세 창을 연 시점의 고정 context입니다.
+  // 실제 응급도(triageLevel)는 별도 live prop으로 계속 전달되어 모달 UI가 실시간 갱신됩니다.
   const [dashboardSnapshot, setDashboardSnapshot] = useState<RedSnapshot | null>(null)
   const [showDashboard, setShowDashboard] = useState(false)
   
@@ -288,9 +288,8 @@ function MainApp() {
         if (data.triage_level) {
           const nextTriageLevel = String(data.triage_level)
 
-          // 라이브 RED episode 스냅샷은 다음 RED episode를 위해 YELLOW/GREEN에서
-          // 초기화할 수 있지만, 이미 열린 EmergencyDashboard는 dashboardSnapshot을
-          // 사용하므로 라이브 응급도 변경에 의해 자동으로 닫히지 않습니다.
+          // RED 진입 시점 스냅샷은 그대로 보존하되, 이미 열린 상세 모달은
+          // triageLevel live prop을 통해 YELLOW <-> RED 변화를 계속 시각적으로 반영합니다.
           setRedSnapshot(current => reduceRedSnapshot(current, {
             patientId,
             triageLevel: nextTriageLevel,
@@ -385,6 +384,29 @@ function MainApp() {
       return 'RED (초응급 - 전신 악화 위험)';
     }
     return level;
+  }
+
+  const isTriageActionable = Boolean(
+    triageLevel && (triageLevel.includes('YELLOW') || triageLevel.includes('RED'))
+  )
+
+  const openLiveTriageDashboard = () => {
+    if (!triageLevel || !isTriageActionable) return
+
+    const normalized = triageLevel.trim().toUpperCase()
+    const snapshot = normalized.startsWith('RED') && redSnapshot
+      ? { ...redSnapshot }
+      : {
+          patientId,
+          triageLevel,
+          lesionVolume,
+          triggeringCondition: triggeringConditionRef.current,
+          hasSepsisRisk: sepsisHighRiskRef.current,
+          modality,
+        }
+
+    setDashboardSnapshot(snapshot)
+    setShowDashboard(true)
   }
 
   return (
@@ -603,34 +625,32 @@ function MainApp() {
                         </div>
                       )}
                       
-                      {triageLevel.includes('RED') && (
+                      {isTriageActionable && (
                         <button
-                          onClick={() => {
-                            if (!redSnapshot) {
-                              toast.error('RED 발생 시점 스냅샷을 준비 중입니다. 잠시 후 다시 시도해주세요.')
-                              return
-                            }
-                            setDashboardSnapshot({ ...redSnapshot })
-                            setShowDashboard(true)
-                          }}
+                          onClick={openLiveTriageDashboard}
                           style={{
                             marginTop: '12px',
                             width: '100%',
                             padding: '10px',
-                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                            border: '1px solid #ef4444',
+                            backgroundColor: triageLevel.includes('RED')
+                              ? 'rgba(239, 68, 68, 0.2)'
+                              : 'rgba(234, 179, 8, 0.16)',
+                            border: `1px solid ${getTriageColor(triageLevel)}`,
                             borderRadius: '6px',
-                            color: '#ef4444',
+                            color: getTriageColor(triageLevel),
                             cursor: 'pointer',
                             display: 'flex',
                             justifyContent: 'center',
+                            alignItems: 'center',
                             gap: '8px',
-                            boxShadow: '0 0 15px rgba(239, 68, 68, 0.6)',
-                            animation: 'pulse 1s infinite'
+                            boxShadow: `0 0 12px ${getTriageColor(triageLevel)}55`,
+                            transition: 'all 0.35s ease'
                           }}
                         >
                           <Activity size={18} />
-                          🚨 골든타임(응급 병상) 긴급 탐색
+                          {triageLevel.includes('RED')
+                            ? 'RED 응급도 상세 · Golden-Time 탐색'
+                            : 'YELLOW 집중 모니터링 · Golden-Time 탐색'}
                         </button>
                       )}
                     </div>
