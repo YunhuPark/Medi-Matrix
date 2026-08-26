@@ -649,8 +649,8 @@ function MainApp() {
                         >
                           <Activity size={18} />
                           {triageLevel.includes('RED')
-                            ? 'RED 응급도 상세 · Golden-Time 탐색'
-                            : 'YELLOW 집중 모니터링 · Golden-Time 탐색'}
+                            ? 'RED · 긴급 이송 병원 탐색'
+                            : 'YELLOW · 대응 병원 후보 확인'}
                         </button>
                       )}
                     </div>
