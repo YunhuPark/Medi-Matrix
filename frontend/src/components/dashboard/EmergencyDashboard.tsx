@@ -86,8 +86,8 @@ export function EmergencyDashboard({
       }
     : isYellow
       ? {
-          heading: '🧠 뇌 병변 대응 병원 탐색',
-          body: 'YELLOW에서는 뇌 병변 대응을 위해 CT/MRI·수술 가능 자원을 중심으로 확인합니다.',
+          heading: '🧠 뇌 병변 대응 병원 후보 사전 확인',
+          body: 'YELLOW에서는 상태 악화에 대비해 CT/MRI·수술 가능 자원을 갖춘 병원 후보를 미리 확인합니다.',
         }
       : {
           heading: '🧠 현재 상태 모니터링',
@@ -101,8 +101,8 @@ export function EmergencyDashboard({
         iconColor: '#ef4444',
         labelColor: '#ef4444',
         titleColor: '#fca5a5',
-        label: '⚠️ 신속한 병상 수배 요망',
-        title: '현재 RED 기준으로 Golden Time 병원을 탐색합니다.',
+        label: '⚠️ 긴급 이송 병원 탐색',
+        title: '현재 RED 기준으로 응급실·ICU 등 대응 자원을 확인합니다.',
       }
     : isYellow
       ? {
@@ -112,7 +112,7 @@ export function EmergencyDashboard({
           labelColor: '#eab308',
           titleColor: '#fde68a',
           label: '현재 상태: 집중 모니터링',
-          title: '현재 YELLOW 기준으로 필요한 진료 자원을 확인합니다.',
+          title: '상태 악화에 대비해 필요한 병원 후보를 사전 확인합니다.',
         }
       : {
           backgroundColor: 'rgba(34, 197, 94, 0.10)',
@@ -125,9 +125,9 @@ export function EmergencyDashboard({
         };
 
   const goldenTimeButtonLabel = isRed
-    ? '현재 RED 기준 Golden Time 병원 탐색'
+    ? 'RED · 긴급 이송 병원 탐색'
     : isYellow
-      ? '현재 YELLOW 기준 Golden Time 병원 탐색'
+      ? 'YELLOW · 대응 병원 후보 확인'
       : '현재 상태 기준 Golden Time 병원 탐색';
 
   return (
