@@ -244,7 +244,7 @@ export function EmergencyDashboard({
                 onClick={handleGoldenTimeRedirect}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                  padding: '1rem', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '8px',
+                  padding: '1rem', backgroundColor: isRed ? '#ef4444' : '#f59e0b', color: '#fff', border: 'none', borderRadius: '8px',
                   fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '0.5rem'
                 }}
               >
