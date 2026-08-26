@@ -33,6 +33,11 @@ function MainApp() {
 
   const handleSignOut = async () => {
     resetMedicalState()
+    shouldStreamRef.current = false
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -74,6 +79,8 @@ function MainApp() {
   
   const wsRef = useRef<WebSocket | null>(null)
   const intervalRef = useRef<number | null>(null)
+  const shouldStreamRef = useRef(false)
+  const reconnectTimerRef = useRef<number | null>(null)
   const triggeringConditionRef = useRef<string | null>(null)
   const sepsisHighRiskRef = useRef(false)
 
@@ -115,6 +122,8 @@ function MainApp() {
   // 컴포넌트 언마운트 시 WebSocket 정리 및 타이머 정리
   useEffect(() => {
     return () => {
+      shouldStreamRef.current = false
+      if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current)
       if (wsRef.current) wsRef.current.close()
       if (intervalRef.current) window.clearInterval(intervalRef.current)
     }
@@ -200,7 +209,12 @@ function MainApp() {
   // WebSocket 스트리밍 토글 함수
   const toggleStreaming = async () => {
     if (isStreaming) {
-      // 스트리밍 중지
+      // 사용자가 직접 중지한 경우에만 자동 재연결을 끕니다.
+      shouldStreamRef.current = false
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
@@ -232,6 +246,8 @@ function MainApp() {
         toast.error("인증 토큰이 만료되었습니다. 다시 로그인해주세요.")
         return
       }
+
+      shouldStreamRef.current = true
       
       const wsUrl = getWebSocketUrl()
       const ws = new WebSocket(wsUrl)
@@ -259,8 +275,9 @@ function MainApp() {
         const data = JSON.parse(event.data)
         
         if (data.status === "completed") {
-          toast.info("CSV 데이터 리플레이가 종료되었습니다.")
-          toggleStreaming()
+          // 서버가 1회 리플레이 완료를 알리더라도 모니터링 의도가 유지 중이면
+          // 연결을 다시 열어 CSV를 처음부터 계속 재생합니다.
+          ws.close()
           return
         }
         if (data.vitals) {
@@ -303,7 +320,21 @@ function MainApp() {
       }
 
       ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null
+        }
         setIsStreaming(false)
+
+        // 사용자가 중지하지 않은 상태에서 네트워크/JWT 만료/서버 종료로
+        // 연결이 끊기면 최신 세션을 다시 받아 자동 재연결합니다.
+        if (shouldStreamRef.current && reconnectTimerRef.current === null) {
+          reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null
+            if (shouldStreamRef.current) {
+              void toggleStreaming()
+            }
+          }, 1000)
+        }
       }
       
       ws.onerror = (_error) => {
