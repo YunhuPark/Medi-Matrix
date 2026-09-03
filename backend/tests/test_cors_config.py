@@ -1,5 +1,6 @@
 import re
 
+from core.cors_policy import is_origin_allowed
 from main import (
     DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX,
     _build_cors_origin_regex,
@@ -58,3 +59,18 @@ def test_explicit_origin_regex_overrides_default(monkeypatch):
     monkeypatch.setenv("ALLOWED_ORIGIN_REGEX", r"^https://preview\.example\.com$")
 
     assert _build_cors_origin_regex() == r"^https://preview\.example\.com$"
+
+
+def test_websocket_origin_policy_accepts_same_preview_hosts(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("ALLOWED_ORIGIN_REGEX", raising=False)
+
+    assert is_origin_allowed(
+        "https://medi-matrix-57ioceasz-park-yun-hus-projects.vercel.app"
+    )
+    assert is_origin_allowed(
+        "https://medi-matrix-git-ai-championship-20-fb627b-park-yun-hus-projects.vercel.app"
+    )
+    assert not is_origin_allowed("https://evil-domain.example")
+    assert not is_origin_allowed(None)
