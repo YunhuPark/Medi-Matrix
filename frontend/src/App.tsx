@@ -43,7 +43,6 @@ function MainApp() {
     setModelUrl,
     caseId,
     setCaseId,
-    patientId,
     setPatientId,
     meshId,
     setMeshId,
@@ -73,7 +72,7 @@ function MainApp() {
   const wsRef = useRef<WebSocket | null>(null)
   const shouldStreamRef = useRef(false)
   const reconnectTimerRef = useRef<number | null>(null)
-  const lastStreamContextRef = useRef<{ caseId: string; volume: number } | null>(null)
+  const lastStreamContextRef = useRef<{ caseId: string; volume: number; modality: 'Brain' | 'Lung' } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
 
@@ -157,7 +156,12 @@ function MainApp() {
     return resolvedCaseId
   }
 
-  const handleStreamMessage = (data: any, streamCaseId: string, volume: number) => {
+  const handleStreamMessage = (
+    data: any,
+    streamCaseId: string,
+    volume: number,
+    streamModality: 'Brain' | 'Lung',
+  ) => {
     if (data.status === 'error') {
       toast.error(data.message || 'Case Vitals 스트리밍 오류가 발생했습니다.')
       return
@@ -185,13 +189,18 @@ function MainApp() {
         lesionVolume: volume,
         triggeringCondition: data.triggering_condition ?? null,
         hasSepsisRisk: Boolean(data.sepsis_high_risk),
-        modality,
+        modality: streamModality,
       }))
       setTriageLevel(nextLevel)
     }
   }
 
-  const openCaseStream = async (streamCaseId: string, volume: number, reconnect = false) => {
+  const openCaseStream = async (
+    streamCaseId: string,
+    volume: number,
+    reconnect = false,
+    streamModality: 'Brain' | 'Lung' = modality,
+  ) => {
     let session
     try {
       session = await ensureDemoSession()
@@ -204,7 +213,7 @@ function MainApp() {
       return
     }
 
-    lastStreamContextRef.current = { caseId: streamCaseId, volume }
+    lastStreamContextRef.current = { caseId: streamCaseId, volume, modality: streamModality }
     shouldStreamRef.current = true
 
     let wsUrl: string
@@ -229,7 +238,7 @@ function MainApp() {
       }))
     }
 
-    ws.onmessage = event => handleStreamMessage(JSON.parse(event.data), streamCaseId, volume)
+    ws.onmessage = event => handleStreamMessage(JSON.parse(event.data), streamCaseId, volume, streamModality)
 
     ws.onclose = () => {
       if (wsRef.current === ws) wsRef.current = null
@@ -238,7 +247,7 @@ function MainApp() {
         reconnectTimerRef.current = window.setTimeout(() => {
           reconnectTimerRef.current = null
           const ctx = lastStreamContextRef.current
-          if (shouldStreamRef.current && ctx) void openCaseStream(ctx.caseId, ctx.volume, true)
+          if (shouldStreamRef.current && ctx) void openCaseStream(ctx.caseId, ctx.volume, true, ctx.modality)
         }, 1000)
       }
     }
@@ -325,7 +334,7 @@ function MainApp() {
       const resolvedCaseId = applyImageResult(demo.image)
       setHasVitalsFile(true)
       toast.success(`${demo.scenario_label} Case가 준비되었습니다.`, { id: toastId })
-      await openCaseStream(resolvedCaseId, demo.image.lesion_volume)
+      await openCaseStream(resolvedCaseId, demo.image.lesion_volume, false, 'Brain')
     } catch (error: any) {
       setAppStatus('IDLE')
       toast.error(error.response?.data?.detail || error.message || 'Demo Case 실행에 실패했습니다.', { id: toastId })
@@ -343,7 +352,7 @@ function MainApp() {
       toast.error('영상과 Vitals가 연결된 Case가 필요합니다.')
       return
     }
-    await openCaseStream(caseId, lesionVolume)
+    await openCaseStream(caseId, lesionVolume, false, modality)
   }
 
   const getTriageColor = (level: string | null) => {
