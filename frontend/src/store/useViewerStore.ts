@@ -9,6 +9,13 @@ interface ViewerState {
   setModelUrl: (url: string | null) => void;
   modality: 'Brain' | 'Lung';
   setModality: (modality: 'Brain' | 'Lung') => void;
+  /**
+   * Non-PHI demo encounter identifier. This is not a hospital MRN or patient ID.
+   * It links MRI, Vitals, Triage and transfer-search context inside the MVP.
+   */
+  caseId: string | null;
+  setCaseId: (id: string | null) => void;
+  /** @deprecated Kept temporarily for dashboard compatibility; mirrors caseId in the new flow. */
   patientId: string | null;
   setPatientId: (id: string | null) => void;
   meshId: string | null;
@@ -29,10 +36,12 @@ interface ViewerState {
 export const useViewerStore = create<ViewerState>((set) => ({
   opacity: 1.0,
   setOpacity: (opacity) => set({ opacity }),
-  modelUrl: null, 
+  modelUrl: null,
   setModelUrl: (url) => set({ modelUrl: url }),
   modality: 'Brain',
   setModality: (modality) => set({ modality }),
+  caseId: null,
+  setCaseId: (id) => set({ caseId: id }),
   patientId: null,
   setPatientId: (id) => set({ patientId: id }),
   meshId: null,
@@ -49,6 +58,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   setTriageLevel: (level) => set({ triageLevel: level }),
   resetMedicalState: () => set({
     modelUrl: null,
+    caseId: null,
     patientId: null,
     meshId: null,
     expiresAt: null,
@@ -58,4 +68,3 @@ export const useViewerStore = create<ViewerState>((set) => ({
     triageLevel: null,
   }),
 }));
-

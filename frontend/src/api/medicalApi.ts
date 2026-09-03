@@ -2,26 +2,50 @@ import axios from 'axios';
 import { ensureDemoSession } from '../auth/demoSession';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const DEFAULT_API_TIMEOUT_MS = 20_000;
+const DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS = 70_000;
+const configuredApiTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? DEFAULT_API_TIMEOUT_MS);
+const configuredDemoBootstrapTimeout = Number(
+  import.meta.env.VITE_DEMO_BOOTSTRAP_TIMEOUT_MS ?? DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS,
+);
+
+export const MEDICAL_API_TIMEOUT_MS = Number.isFinite(configuredApiTimeout)
+  ? Math.max(1_000, configuredApiTimeout)
+  : DEFAULT_API_TIMEOUT_MS;
+
+// Render free instances may need 50s+ to wake from inactivity. Keep ordinary API
+// calls fail-fast while giving the one-click demo bootstrap enough time to survive
+// a cold start instead of reporting a false network failure.
+export const DEMO_BOOTSTRAP_TIMEOUT_MS = Number.isFinite(configuredDemoBootstrapTimeout)
+  ? Math.max(MEDICAL_API_TIMEOUT_MS, configuredDemoBootstrapTimeout)
+  : DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS;
 
 export const medicalApi = axios.create({
   baseURL: API_BASE_URL,
+  timeout: MEDICAL_API_TIMEOUT_MS,
 });
 
 medicalApi.interceptors.request.use(async (config) => {
   const requestUrl = config.url || '';
   const baseURL = config.baseURL || API_BASE_URL;
 
+  // A protocol-relative URL (//host/path) resolves to an external origin in a
+  // browser. Reject it before normalizing ordinary API paths such as /cases.
+  if (requestUrl.startsWith('//')) {
+    throw new Error('Blocked: medicalApi must not make requests to external URLs.');
+  }
+
   let targetUrl: URL;
   try {
-    // Safely parse URL relative to window.location.origin for relative API_BASE_URL
     const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
-    const base = new URL(baseURL, baseOrigin);
-    targetUrl = new URL(requestUrl, base);
-  } catch (e) {
+    const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
+    const base = new URL(normalizedBaseURL, baseOrigin);
+    const normalizedRequestUrl = requestUrl.startsWith('/') ? requestUrl.slice(1) : requestUrl;
+    targetUrl = new URL(normalizedRequestUrl, base);
+  } catch {
     throw new Error('Blocked: Invalid URL construction.');
   }
 
-  // Determine allowed origin
   const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const allowedOrigin = new URL(API_BASE_URL, baseOrigin).origin;
 
@@ -29,13 +53,7 @@ medicalApi.interceptors.request.use(async (config) => {
     throw new Error('Blocked: medicalApi must not make requests to external URLs.');
   }
 
-  let session;
-  try {
-    session = await ensureDemoSession();
-  } catch (error) {
-    throw error;
-  }
-
+  const session = await ensureDemoSession();
   if (!session?.access_token) {
     throw new Error('Authentication required. Please log in again.');
   }
@@ -43,6 +61,28 @@ medicalApi.interceptors.request.use(async (config) => {
   config.headers.Authorization = `Bearer ${session.access_token}`;
   return config;
 });
+
+export interface CaseContextResponse {
+  case_id: string;
+  identifier_type: 'non_phi_demo_case';
+  clinical_identifier: false;
+}
+
+export const createCaseContext = async (): Promise<CaseContextResponse> => {
+  const response = await medicalApi.post<CaseContextResponse>('/cases');
+  return response.data;
+};
+
+export const uploadVitalsForCase = async (caseId: string, file: File): Promise<any> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await medicalApi.post(`/cases/${encodeURIComponent(caseId)}/vitals`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
 
 export interface ProcessMaskResponse {
   status: string;
@@ -53,8 +93,36 @@ export interface ProcessMaskResponse {
   expires_in: number;
   expires_at: number;
   patient_id: string;
+  case_id?: string;
+  identifier_type?: 'non_phi_demo_case';
+  clinical_identifier?: false;
   lesion_volume: number;
 }
+
+export interface TransferDemoResponse {
+  status: 'success';
+  case_id: string;
+  scenario: 'ed_interhospital_transfer_support';
+  scenario_label: string;
+  data_mode: 'synthetic_bundled_demo';
+  clinical_identifier: false;
+  vitals_attached: true;
+  image: ProcessMaskResponse;
+  integration_target: {
+    imaging: string;
+    vitals: string;
+    encounter: string;
+  };
+}
+
+export const bootstrapTransferDemoCase = async (): Promise<TransferDemoResponse> => {
+  const response = await medicalApi.post<TransferDemoResponse>(
+    '/demo/transfer-case',
+    undefined,
+    { timeout: DEMO_BOOTSTRAP_TIMEOUT_MS },
+  );
+  return response.data;
+};
 
 export const processMedicalMask = async (file: File, modality: string = 'Brain'): Promise<ProcessMaskResponse> => {
   const formData = new FormData();
@@ -70,6 +138,33 @@ export const processMedicalMask = async (file: File, modality: string = 'Brain')
 
   if (response.data.status !== 'success') {
     throw new Error(response.data.message || 'Failed to process image');
+  }
+
+  return response.data;
+};
+
+export const processMedicalMaskForCase = async (
+  caseId: string,
+  file: File,
+  modality: string = 'Brain'
+): Promise<ProcessMaskResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('modality', modality);
+
+  const response = await medicalApi.post<ProcessMaskResponse>(
+    `/cases/${encodeURIComponent(caseId)}/process-mri`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Accept': '.npy, .nii.gz',
+      },
+    }
+  );
+
+  if (response.data.status !== 'success') {
+    throw new Error(response.data.message || 'Failed to process case image');
   }
 
   return response.data;
