@@ -3,11 +3,22 @@ import { ensureDemoSession } from '../auth/demoSession';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 const DEFAULT_API_TIMEOUT_MS = 20_000;
+const DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS = 70_000;
 const configuredApiTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? DEFAULT_API_TIMEOUT_MS);
+const configuredDemoBootstrapTimeout = Number(
+  import.meta.env.VITE_DEMO_BOOTSTRAP_TIMEOUT_MS ?? DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS,
+);
 
 export const MEDICAL_API_TIMEOUT_MS = Number.isFinite(configuredApiTimeout)
   ? Math.max(1_000, configuredApiTimeout)
   : DEFAULT_API_TIMEOUT_MS;
+
+// Render free instances may need 50s+ to wake from inactivity. Keep ordinary API
+// calls fail-fast while giving the one-click demo bootstrap enough time to survive
+// a cold start instead of reporting a false network failure.
+export const DEMO_BOOTSTRAP_TIMEOUT_MS = Number.isFinite(configuredDemoBootstrapTimeout)
+  ? Math.max(MEDICAL_API_TIMEOUT_MS, configuredDemoBootstrapTimeout)
+  : DEFAULT_DEMO_BOOTSTRAP_TIMEOUT_MS;
 
 export const medicalApi = axios.create({
   baseURL: API_BASE_URL,
@@ -105,7 +116,11 @@ export interface TransferDemoResponse {
 }
 
 export const bootstrapTransferDemoCase = async (): Promise<TransferDemoResponse> => {
-  const response = await medicalApi.post<TransferDemoResponse>('/demo/transfer-case');
+  const response = await medicalApi.post<TransferDemoResponse>(
+    '/demo/transfer-case',
+    undefined,
+    { timeout: DEMO_BOOTSTRAP_TIMEOUT_MS },
+  );
   return response.data;
 };
 
