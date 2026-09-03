@@ -13,7 +13,6 @@ medicalApi.interceptors.request.use(async (config) => {
 
   let targetUrl: URL;
   try {
-    // Safely parse URL relative to window.location.origin for relative API_BASE_URL
     const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
     const base = new URL(baseURL, baseOrigin);
     targetUrl = new URL(requestUrl, base);
@@ -21,7 +20,6 @@ medicalApi.interceptors.request.use(async (config) => {
     throw new Error('Blocked: Invalid URL construction.');
   }
 
-  // Determine allowed origin
   const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const allowedOrigin = new URL(API_BASE_URL, baseOrigin).origin;
 
@@ -29,13 +27,7 @@ medicalApi.interceptors.request.use(async (config) => {
     throw new Error('Blocked: medicalApi must not make requests to external URLs.');
   }
 
-  let session;
-  try {
-    session = await ensureDemoSession();
-  } catch (error) {
-    throw error;
-  }
-
+  const session = await ensureDemoSession();
   if (!session?.access_token) {
     throw new Error('Authentication required. Please log in again.');
   }
@@ -43,6 +35,28 @@ medicalApi.interceptors.request.use(async (config) => {
   config.headers.Authorization = `Bearer ${session.access_token}`;
   return config;
 });
+
+export interface CaseContextResponse {
+  case_id: string;
+  identifier_type: 'non_phi_demo_case';
+  clinical_identifier: false;
+}
+
+export const createCaseContext = async (): Promise<CaseContextResponse> => {
+  const response = await medicalApi.post<CaseContextResponse>('/cases');
+  return response.data;
+};
+
+export const uploadVitalsForCase = async (caseId: string, file: File): Promise<any> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await medicalApi.post(`/cases/${encodeURIComponent(caseId)}/vitals`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
 
 export interface ProcessMaskResponse {
   status: string;
