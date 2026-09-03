@@ -18,6 +18,12 @@ medicalApi.interceptors.request.use(async (config) => {
   const requestUrl = config.url || '';
   const baseURL = config.baseURL || API_BASE_URL;
 
+  // A protocol-relative URL (//host/path) resolves to an external origin in a
+  // browser. Reject it before normalizing ordinary API paths such as /cases.
+  if (requestUrl.startsWith('//')) {
+    throw new Error('Blocked: medicalApi must not make requests to external URLs.');
+  }
+
   let targetUrl: URL;
   try {
     const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
