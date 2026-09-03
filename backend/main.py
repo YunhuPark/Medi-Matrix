@@ -5,6 +5,8 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 from api.router import router as medical_router
+from api.case_router import case_router
+from api.demo_router import demo_router
 from core.cors_policy import (
     build_cors_origin_regex as _build_cors_origin_regex,
     build_cors_origins as _build_cors_origins,
@@ -42,7 +44,12 @@ app.add_middleware(
     allow_headers=["Accept", "Content-Type", "Authorization"],
 )
 
+# Legacy endpoints remain available for backwards compatibility. Competition
+# flows use the Case/Demo routers so imaging, Vitals, Triage and transfer
+# context are bound to one non-PHI encounter identifier.
 app.include_router(medical_router, prefix="/api/v1")
+app.include_router(case_router, prefix="/api/v1")
+app.include_router(demo_router, prefix="/api/v1")
 
 
 @app.get("/")
