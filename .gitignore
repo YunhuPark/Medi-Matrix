@@ -25,6 +25,10 @@ backend/data/real_vitals.csv
 backend/data/uploads/
 backend/data/users/
 
+# Model checkpoints are external research artifacts. Do not commit new weights.
+*.pt
+*.pth
+
 # Synthetic Demo Datasets
 backend/demo_datasets/generated/
 contest_artifacts/
