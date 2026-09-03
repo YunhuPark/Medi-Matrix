@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import App from '../App';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import App from '../App';
+import { useViewerStore } from '../store/useViewerStore';
 
 vi.mock('../auth/demoSession', () => ({
   ensureDemoSession: vi.fn(),
@@ -27,50 +28,54 @@ vi.mock('../lib/supabase', () => ({
   },
 }));
 
-const queryClient = new QueryClient();
+function renderApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  );
+}
 
 describe('App Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useViewerStore.getState().resetMedicalState();
   });
 
-  it('첫 방문에서 로그인 화면 없이 제품 UI가 즉시 표시됨', async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    );
+  it('첫 방문에서 전원 지원 제품 시나리오가 즉시 표시됨', async () => {
+    renderApp();
 
-    expect(await screen.findByText('Medical Image 3D Viewer')).toBeInTheDocument();
+    expect(await screen.findByText('Medi-Matrix')).toBeInTheDocument();
+    expect(screen.getByText(/현실 타깃: 지역 응급실 → 상급병원 전원 지원/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Demo Case 한 번에 실행/i })).toBeInTheDocument();
     expect(screen.queryByText('Medi-Matrix 로그인')).not.toBeInTheDocument();
   });
 
-  it('세션 초기화 시 상태가 초기화됨', async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    );
+  it('Case 초기화 시 Case 상태가 초기화됨', async () => {
+    useViewerStore.getState().setCaseId('MM-A1B2C3D4');
+    useViewerStore.getState().setPatientId('MM-A1B2C3D4');
+    renderApp();
 
-    const logoutBtn = await screen.findByText('데모 세션 초기화');
-    fireEvent.click(logoutBtn);
-    expect(await screen.findByText('Medical Image 3D Viewer')).toBeInTheDocument();
+    expect(await screen.findByText('MM-A1B2C3D4')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Case 초기화' }));
+
+    expect(await screen.findByText('아직 생성되지 않음')).toBeInTheDocument();
+    expect(screen.getByText('Medi-Matrix')).toBeInTheDocument();
   });
 
-  it('demo 모드에서 실제 AI 진단으로 오해할 문구가 표시되지 않고 합성 데모 안내가 표시됨', async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    );
+  it('공개 데모 한계와 실제 연동 목표를 명확히 표시함', async () => {
+    renderApp();
 
-    expect(await screen.findByText(/임상적 검증을 거치지 않은 공모전용 프로토타입/i)).toBeInTheDocument();
-    expect(await screen.findByText(/심사위원 시연 순서/i)).toBeInTheDocument();
-    expect(await screen.findByText(/1단계: .* 합성 3D 의료영상 업로드/i)).toBeInTheDocument();
-    expect(await screen.findByText(/2단계: 합성 Vitals 시계열 업로드/i)).toBeInTheDocument();
+    expect(await screen.findByText(/합성 입력 기반 공모전 프로토타입 · 임상 진단\/전원 지시 시스템 아님/i)).toBeInTheDocument();
+    expect(screen.getByText(/PACS·EMR\/환자모니터 연동 전 MVP 입력 어댑터/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /수동 영상 Context 업로드/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /같은 Case에 Vitals 연결/i })).toBeInTheDocument();
 
     expect(screen.queryByText(/Real-Data Ready/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/실제 환자 데이터 스트리밍/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/PyTorch Inference/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/최적 병원/i)).not.toBeInTheDocument();
   });
 });
