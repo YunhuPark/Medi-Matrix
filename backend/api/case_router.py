@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from api.router import process_medical_mri
 from core.auth import CurrentUser, decode_verified_token_exp, get_current_user
 from core.case_context import new_case_id, validate_case_id
+from core.cors_policy import is_origin_allowed
 from core.rate_limit import check_rate_limit, upload_vitals_limiter, websocket_limiter
 from services.case_storage import download_case_vitals, upload_case_vitals
 
@@ -144,13 +145,7 @@ async def process_case_mri(
     modality: str = Form("Brain"),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Run the existing image pipeline while binding the result to one Case ID.
-
-    The legacy image pipeline and Signed-URL storage path stay compatible in this
-    tranche. The Case ID replaces the generated mock patient identifier at the
-    API boundary so the frontend can link image, Vitals, Triage and transfer
-    search to one encounter without representing it as a real hospital MRN.
-    """
+    """Run the existing image pipeline while binding the result to one Case ID."""
     valid_case_id = validate_case_id(case_id)
     response = await process_medical_mri(
         request=request,
@@ -169,7 +164,6 @@ async def process_case_mri(
         raise HTTPException(status_code=500, detail="Invalid image pipeline response.")
 
     payload["case_id"] = valid_case_id
-    # Backward-compatible field used by the existing dashboard components.
     payload["patient_id"] = valid_case_id
     payload["identifier_type"] = "non_phi_demo_case"
     payload["clinical_identifier"] = False
@@ -189,20 +183,9 @@ async def _authenticate_case_websocket(websocket: WebSocket) -> tuple[str, int, 
         await websocket.close(code=4429)
         raise RuntimeError("rate_limited")
 
-    app_env = os.environ.get("APP_ENV", "development")
-    allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "").strip()
-    origin = websocket.headers.get("origin")
-    origin_normalized = origin.strip().rstrip("/") if origin else ""
-
-    if app_env == "production" and not allowed_origins_str:
+    if not is_origin_allowed(websocket.headers.get("origin")):
         await websocket.close(code=4401)
         raise RuntimeError("origin_rejected")
-
-    if allowed_origins_str:
-        allowed_list = [o.strip().rstrip("/") for o in allowed_origins_str.split(",") if o.strip()]
-        if origin_normalized not in allowed_list:
-            await websocket.close(code=4401)
-            raise RuntimeError("origin_rejected")
 
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
@@ -361,7 +344,6 @@ async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
 
         try:
             from api.mamba_inference import MambaSystemicPredictor
-
             predictor = MambaSystemicPredictor()
         except Exception:
             await websocket.close(code=1011)
