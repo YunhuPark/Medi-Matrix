@@ -108,9 +108,20 @@ Medi-Matrix는 연구 모델, 공개 제품 데모, 실제 공개 의료자원 �
 
 ### IMST-Mamba 연구
 
-IMST-Mamba는 ICU 시계열에서 결측과 시간 간격을 함께 다루기 위해 별도로 구현·평가한 연구 모델입니다. 실제 IMST-Mamba 연구 코드는 현재 공개 Medi-Matrix의 실시간 demo inference와 동일한 것이 아닙니다.
+IMST-Mamba는 ICU 시계열에서 결측과 시간 간격을 함께 다루기 위해 별도 저장소에서 구현·평가한 연구 모델입니다. Medi-Matrix의 `IMST-Mamba` submodule은 현재 연구 저장소의 commit `d8e5762b72f2b9e812b1ae5d8036c290c024781b`를 가리킵니다.
 
-따라서 현재 배포 화면에서 **“IMST-Mamba가 실제 환자의 패혈증을 실시간 진단한다”**고 주장하지 않습니다. 실제 모델을 제품 SENSE 모듈에 연결하려면 학습 checkpoint, 동일한 feature preprocessing, 외부 검증 및 운영 추론 안정성 검증이 선행되어야 합니다.
+호환성 감사 결과, 실제 연구 모델과 과거 Medi-Matrix `model` 경로는 서로 다른 계약을 사용하고 있었습니다.
+
+| 항목 | 실제 IMST-Mamba 연구 | 과거 Medi-Matrix model 경로 |
+|---|---|---|
+| 입력 feature | 34개 (8 Vitals + 26 Labs) | 6개 Vitals |
+| 추가 입력 | 관측 mask, 시간 간격, missingness recency, attention mask | 없음 |
+| 주요 출력 | 시점별 Sepsis probability | Sepsis/ARDS/Shock 3개 출력 |
+| 구조 | IMST-Mamba blocks + missingness/time encoding | 2-layer fully-connected dummy network |
+
+따라서 기존 `backend/models/imst_mamba_systemic_model.pth`는 실제 IMST-Mamba 연구 checkpoint로 취급할 수 없으며 hardening branch에서 제거했습니다. `INFERENCE_MODE=model` 역시 현재는 **fail-closed** 하도록 막아 두었습니다. 검증된 연구 checkpoint, 동일 normalization statistics, 34-feature preprocessing adapter가 모두 연결되기 전에는 model mode를 활성화하지 않습니다.
+
+현재 배포 화면에서 **“IMST-Mamba가 실제 환자의 패혈증을 실시간 진단한다”**고 주장하지 않습니다. 연구 모델을 제품 SENSE 모듈에 연결하는 작업은 별도의 검증 단계입니다.
 
 ### Golden-Time / E-Gen
 
@@ -252,12 +263,14 @@ ALLOWED_ORIGINS=https://medi-matrix.vercel.app
 
 ## 11. 다음 검증 단계
 
-1. 실제 IMST-Mamba checkpoint와 Medi-Matrix preprocessing 호환성 검증
-2. 실제 공개 MRI/segmentation dataset을 이용한 Vision pipeline 검증
-3. IMST-Mamba의 별도 ICU dataset 외부 검증
-4. 동일 환자의 영상 + Vitals가 연결된 연구 데이터로 진정한 multimodal validation
-5. PACS/DICOM 및 EMR/FHIR adapter PoC
-6. 실제 병원 workflow를 가정한 Silent Pilot / prospective validation 설계
+1. IMST-Mamba 연구 checkpoint + normalization stats 확보 및 provenance 고정
+2. PhysioNet 2019과 동일한 34-feature preprocessing adapter를 Medi-Matrix SENSE 입력 경계에 별도 구현
+3. 연구 저장소와 동일 입력에 대해 offline parity test를 통과한 뒤에만 model mode 활성화
+4. 실제 공개 MRI/segmentation dataset을 이용한 Vision pipeline 검증
+5. IMST-Mamba의 별도 ICU dataset 외부 검증
+6. 동일 환자의 영상 + Vitals가 연결된 연구 데이터로 진정한 multimodal validation
+7. PACS/DICOM 및 EMR/FHIR adapter PoC
+8. 실제 병원 workflow를 가정한 Silent Pilot / prospective validation 설계
 
 ## 12. 프로젝트 경계
 
