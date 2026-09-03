@@ -67,6 +67,9 @@ export interface ProcessMaskResponse {
   expires_in: number;
   expires_at: number;
   patient_id: string;
+  case_id?: string;
+  identifier_type?: 'non_phi_demo_case';
+  clinical_identifier?: false;
   lesion_volume: number;
 }
 
@@ -84,6 +87,33 @@ export const processMedicalMask = async (file: File, modality: string = 'Brain')
 
   if (response.data.status !== 'success') {
     throw new Error(response.data.message || 'Failed to process image');
+  }
+
+  return response.data;
+};
+
+export const processMedicalMaskForCase = async (
+  caseId: string,
+  file: File,
+  modality: string = 'Brain'
+): Promise<ProcessMaskResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('modality', modality);
+
+  const response = await medicalApi.post<ProcessMaskResponse>(
+    `/cases/${encodeURIComponent(caseId)}/process-mri`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Accept': '.npy, .nii.gz',
+      },
+    }
+  );
+
+  if (response.data.status !== 'success') {
+    throw new Error(response.data.message || 'Failed to process case image');
   }
 
   return response.data;
