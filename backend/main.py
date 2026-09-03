@@ -30,10 +30,10 @@ DEFAULT_DEV_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
-# Vercel creates a new hostname for each Preview deployment. Keep this scoped to
-# this project/team instead of opening CORS with a wildcard.
+# Vercel creates both per-deployment hostnames and branch aliases for Preview.
+# Keep matching scoped to this exact project/team instead of opening CORS with *.
 DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX = (
-    r"^https://medi-matrix-[a-z0-9]+-park-yun-hus-projects\.vercel\.app$"
+    r"^https://medi-matrix-[a-z0-9-]+-park-yun-hus-projects\.vercel\.app$"
 )
 
 
@@ -64,7 +64,7 @@ def _build_cors_origin_regex():
 
 
 # Configure CORS. Production keeps exact origins from ALLOWED_ORIGINS while also
-# allowing only this project's ephemeral Vercel Preview hostnames.
+# allowing only this project's Vercel Preview deployment and branch hostnames.
 origins = _build_cors_origins()
 origin_regex = _build_cors_origin_regex()
 
