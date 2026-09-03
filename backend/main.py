@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
 from api.router import router as medical_router
+from api.case_router import case_router
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(medical_router, prefix="/api/v1")
+app.include_router(case_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():
@@ -82,7 +84,7 @@ def health_ready():
         for path in model_paths:
             if not os.path.exists(path):
                 raise HTTPException(status_code=503, detail="Model weights missing")
-                
+            
     return JSONResponse(content={"status": "ready", "inference_mode": inference_mode})
 
 if __name__ == "__main__":
