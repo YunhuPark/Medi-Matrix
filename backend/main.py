@@ -5,18 +5,14 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 from api.router import router as medical_router
-from api.case_router import case_router
-from api.demo_router import demo_router
 from core.cors_policy import (
-    DEFAULT_DEV_ORIGINS,
-    DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX,
     build_cors_origin_regex as _build_cors_origin_regex,
     build_cors_origins as _build_cors_origins,
 )
 
 load_dotenv()
 
-app = FastAPI(title="Medi-Matrix Transfer Decision Support API")
+app = FastAPI(title="Medical Image 3D Viewer API")
 
 
 @app.on_event("startup")
@@ -32,8 +28,8 @@ async def startup_event():
             print(f"{pkg}=<not-installed>")
 
 
-# Configure CORS. Production keeps exact origins from ALLOWED_ORIGINS while also
-# allowing only this project's Vercel Preview deployment and branch hostnames.
+# Keep the production origin allow-list while permitting only this project's
+# Vercel Preview hostnames through a scoped regex.
 origins = _build_cors_origins()
 origin_regex = _build_cors_origin_regex()
 
@@ -47,17 +43,11 @@ app.add_middleware(
 )
 
 app.include_router(medical_router, prefix="/api/v1")
-app.include_router(case_router, prefix="/api/v1")
-app.include_router(demo_router, prefix="/api/v1")
 
 
 @app.get("/")
 def read_root():
-    return {
-        "message": "Medi-Matrix transfer decision-support prototype API",
-        "target_scenario": "local ED to higher-level hospital transfer support",
-        "clinical_use": False,
-    }
+    return {"message": "Welcome to Medical Image 3D Viewer API"}
 
 
 @app.get("/health/live")
