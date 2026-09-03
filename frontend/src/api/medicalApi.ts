@@ -2,9 +2,16 @@ import axios from 'axios';
 import { ensureDemoSession } from '../auth/demoSession';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const DEFAULT_API_TIMEOUT_MS = 20_000;
+const configuredApiTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? DEFAULT_API_TIMEOUT_MS);
+
+export const MEDICAL_API_TIMEOUT_MS = Number.isFinite(configuredApiTimeout)
+  ? Math.max(1_000, configuredApiTimeout)
+  : DEFAULT_API_TIMEOUT_MS;
 
 export const medicalApi = axios.create({
   baseURL: API_BASE_URL,
+  timeout: MEDICAL_API_TIMEOUT_MS,
 });
 
 medicalApi.interceptors.request.use(async (config) => {
@@ -14,9 +21,11 @@ medicalApi.interceptors.request.use(async (config) => {
   let targetUrl: URL;
   try {
     const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
-    const base = new URL(baseURL, baseOrigin);
-    targetUrl = new URL(requestUrl, base);
-  } catch (e) {
+    const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
+    const base = new URL(normalizedBaseURL, baseOrigin);
+    const normalizedRequestUrl = requestUrl.startsWith('/') ? requestUrl.slice(1) : requestUrl;
+    targetUrl = new URL(normalizedRequestUrl, base);
+  } catch {
     throw new Error('Blocked: Invalid URL construction.');
   }
 
