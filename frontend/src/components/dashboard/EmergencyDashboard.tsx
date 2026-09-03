@@ -23,9 +23,6 @@ export function EmergencyDashboard({
   const isYellow = normalizedTriage.startsWith('YELLOW');
   const isGreen = normalizedTriage.startsWith('GREEN');
 
-  // 모달은 사용자가 X를 누를 때까지 유지하되, 실시간 스트리밍의 현재 Triage에 맞춰
-  // 제목/테두리/상태 패널만 부드럽게 갱신합니다. pulse 같은 반복 애니메이션은 사용하지 않아
-  // YELLOW <-> RED 전환이 잦아도 화면 피로도를 최소화합니다.
   const liveStatusColor = isRed
     ? '#ef4444'
     : isYellow
@@ -59,16 +56,16 @@ export function EmergencyDashboard({
         : triageLevel;
 
   const headerTitle = isRed
-    ? '중증 응급 환자 발생 (CODE RED)'
+    ? '상급병원 전원 검토 · RED Context'
     : isYellow
-      ? '집중 모니터링 필요 (YELLOW)'
+      ? '상급병원 전원 후보 사전 확인 · YELLOW'
       : isGreen
-        ? '현재 상태 안정 범위 (GREEN)'
-        : '실시간 응급도 모니터링';
+        ? '현재 상태 안정 범위 · GREEN'
+        : '전원 지원 Context';
 
   const handleGoldenTimeRedirect = () => {
     // 현재 실시간 응급도를 그대로 전달해 YELLOW / RED 병원 탐색 분기를 사용합니다.
-    // RED 내부에서는 ARDS-like / Sepsis-like / Shock-like가 공통 systemic 경로를 사용합니다.
+    // Golden-Time은 의료진을 대신해 전원을 결정하지 않고, 공개 가용자원 기반 후보 탐색만 지원합니다.
     const url = buildGoldenTimeUrl({
       triage: triageLevel,
       modality,
@@ -81,17 +78,17 @@ export function EmergencyDashboard({
 
   const brainProtocol = isRed
     ? {
-        heading: '🧠 뇌 병변 + 전신악화 대응 병원 탐색',
-        body: 'RED에서는 ARDS-like·Sepsis-like·Shock-like 중 무엇이 높든 동일하게 응급실·ICU·뇌 영상·수술 자원을 확인합니다.',
+        heading: '🧠 뇌 병변 Context + 전신악화 대응 자원',
+        body: 'RED에서는 합성 Vitals 악화와 영상 Context를 바탕으로 응급실·ICU·뇌 영상·수술 자원이 필요한 전원 시나리오를 구성합니다.',
       }
     : isYellow
       ? {
-          heading: '🧠 뇌 병변 대응 병원 후보 사전 확인',
-          body: 'YELLOW에서는 상태 악화에 대비해 CT/MRI·수술 가능 자원을 갖춘 병원 후보를 미리 확인합니다.',
+          heading: '🧠 뇌 병변 Context 기반 전원 후보 사전 확인',
+          body: 'YELLOW에서는 상태 악화 가능성에 대비해 CT/MRI·수술 가능 자원을 갖춘 병원 후보를 미리 확인합니다.',
         }
       : {
-          heading: '🧠 현재 상태 모니터링',
-          body: 'GREEN에서는 현재 상태를 계속 모니터링하고, 응급도가 상승하면 해당 기준으로 병원 탐색 조건을 갱신합니다.',
+          heading: '🧠 현재 Case 모니터링',
+          body: 'GREEN에서는 현재 상태를 계속 모니터링하고, 응급도가 상승하면 전원 탐색에 필요한 자원 조건도 함께 갱신합니다.',
         };
 
   const escalationPanel = isRed
@@ -101,8 +98,8 @@ export function EmergencyDashboard({
         iconColor: '#ef4444',
         labelColor: '#ef4444',
         titleColor: '#fca5a5',
-        label: '⚠️ 긴급 이송 병원 탐색',
-        title: '현재 RED 기준으로 응급실·ICU 등 대응 자원을 확인합니다.',
+        label: '⚠️ 전원 후보 긴급 탐색 Context',
+        title: '현재 RED 데모 기준으로 응급실·ICU 등 대응 자원을 추가 확인합니다.',
       }
     : isYellow
       ? {
@@ -112,7 +109,7 @@ export function EmergencyDashboard({
           labelColor: '#eab308',
           titleColor: '#fde68a',
           label: '현재 상태: 집중 모니터링',
-          title: '상태 악화에 대비해 필요한 병원 후보를 사전 확인합니다.',
+          title: '상태 악화에 대비해 영상·수술 자원을 갖춘 전원 후보를 사전 확인합니다.',
         }
       : {
           backgroundColor: 'rgba(34, 197, 94, 0.10)',
@@ -125,14 +122,14 @@ export function EmergencyDashboard({
         };
 
   const goldenTimeButtonLabel = isRed
-    ? 'RED · 긴급 이송 병원 탐색'
+    ? 'RED · 필요한 자원 기준 전원 후보 탐색'
     : isYellow
-      ? 'YELLOW · 대응 병원 후보 확인'
-      : '현재 상태 기준 Golden Time 병원 탐색';
+      ? 'YELLOW · 대응 가능 병원 후보 사전 확인'
+      : '현재 Context 기준 병원 후보 탐색';
 
   return (
     <div
-      data-triage-flow-version="live-triage-shell-v4"
+      data-triage-flow-version="transfer-context-v1"
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -151,6 +148,7 @@ export function EmergencyDashboard({
       }}>
         <button
           onClick={onClose}
+          aria-label="전원 지원 Context 닫기"
           style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
         >
           <X size={24} />
@@ -165,44 +163,44 @@ export function EmergencyDashboard({
           <div>
             <h1 style={{ margin: 0, color: liveStatusColor, fontSize: '2rem', transition: 'color 350ms ease' }}>{headerTitle}</h1>
             <p style={{ margin: '4px 0 0 0', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
-              합성 데이터 분석 데모 | 임상 진단 아님 · 공모전 프로토타입
+              합성 데이터 기반 전원 지원 데모 | 임상 진단·전원 지시 아님
             </p>
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>합성 데이터 분석 리포트</h3>
+            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>현재 Case Context</h3>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: '1.8' }}>
-              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
+              <li><strong>Case ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
               <li>
-                <strong>모달리티:</strong>{' '}
+                <strong>영상 Context:</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>
-                  {modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
+                  {modality === 'Brain' ? '🧠 Brain MRI demo' : '🫁 Lung CT demo'}
                 </span>
               </li>
               <li>
                 <strong>병변 체적 (Vision):</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>{lesionVolume.toLocaleString()} voxels</span>
-                {' '}(3D context)
+                {' '}(synthetic 3D context)
               </li>
               <li>
                 <strong>Vitals 상태:</strong>{' '}
                 <span style={{ color: liveStatusColor, fontWeight: 'bold', transition: 'color 350ms ease' }}>{liveVitalsStatus}</span>
-                {' '}(합성 데모)
+                {' '}(합성 Replay)
               </li>
               <li>
-                <strong>현재 실시간 분류:</strong>{' '}
+                <strong>현재 Demo Triage:</strong>{' '}
                 <span style={{ color: liveStatusColor, fontWeight: 'bold', transition: 'color 350ms ease' }}>{displayTriage}</span>
               </li>
             </ul>
-            <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-              * 실시간 Vitals 스트리밍에 따라 현재 응급도와 병원 탐색 기준이 함께 갱신됩니다. 이 창은 사용자가 X를 누를 때까지 유지됩니다.
+            <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+              * Case ID는 환자명·MRN이 아닌 비식별 데모 Encounter 키입니다. 실제 적용에서는 병원 PACS/EMR Encounter와 서버 측에서 매핑하는 구조를 목표로 합니다.
             </p>
           </div>
 
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>환자 이송 프로토콜</h3>
+            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>전원 탐색 Context</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {modality === 'Brain' ? (
@@ -212,18 +210,15 @@ export function EmergencyDashboard({
                 }}>
                   <strong>{brainProtocol.heading}</strong><br />
                   {brainProtocol.body}<br />
-                  <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>공개 응급의료 정보 기반 추천 (임상 진단 아님)</span>
+                  <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>필요 자원은 데모 정책이며 임상 표준·전원 지시가 아닙니다.</span>
                 </div>
               ) : (
                 <div style={{
                   backgroundColor: 'rgba(251, 191, 36, 0.1)', padding: '0.75rem',
                   borderRadius: '8px', border: '1px solid #fbbf24', fontSize: '0.85rem', color: '#fcd34d'
                 }}>
-                  <strong>⚠️ {modality} 모드 특화 추천 미지원</strong><br />
-                  {isRed
-                    ? 'RED에서는 응급실·ICU 등 전신악화 대응 자원을 우선 확인합니다.'
-                    : '현재 응급도에 맞는 공개 응급의료 가용자원을 기준으로 탐색합니다.'}<br />
-                  공개 응급의료 가용자원을 기준으로 탐색합니다.
+                  <strong>⚠️ {modality} 모드 특화 전원 정책 미지원</strong><br />
+                  현재 응급도에 맞는 공개 응급의료 가용자원을 기준으로 후보 탐색만 지원합니다.
                 </div>
               )}
 
@@ -242,15 +237,20 @@ export function EmergencyDashboard({
 
               <button
                 onClick={handleGoldenTimeRedirect}
+                disabled={isGreen}
+                title={isGreen ? 'YELLOW 또는 RED에서 전원 후보 탐색이 활성화됩니다.' : undefined}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                  padding: '1rem', backgroundColor: isRed ? '#ef4444' : '#f59e0b', color: '#fff', border: 'none', borderRadius: '8px',
-                  fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '0.5rem'
+                  padding: '1rem', backgroundColor: isGreen ? '#475569' : isRed ? '#ef4444' : '#f59e0b', color: '#fff', border: 'none', borderRadius: '8px',
+                  fontSize: '1.05rem', fontWeight: 'bold', cursor: isGreen ? 'not-allowed' : 'pointer', marginTop: '0.5rem', opacity: isGreen ? 0.65 : 1
                 }}
               >
                 <MapPin size={20} />
                 {goldenTimeButtonLabel}
               </button>
+              <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.72rem', lineHeight: 1.4 }}>
+                Golden-Time은 E-Gen 공개 가용자원과 위치 정보를 이용해 후보 탐색을 지원하며, 최종 전원 결정과 수용 확정은 의료기관 간 절차가 필요합니다.
+              </p>
             </div>
           </div>
         </div>
