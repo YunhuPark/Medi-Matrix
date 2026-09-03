@@ -7,6 +7,12 @@ from dotenv import load_dotenv
 from api.router import router as medical_router
 from api.case_router import case_router
 from api.demo_router import demo_router
+from core.cors_policy import (
+    DEFAULT_DEV_ORIGINS,
+    DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX,
+    build_cors_origin_regex as _build_cors_origin_regex,
+    build_cors_origins as _build_cors_origins,
+)
 
 load_dotenv()
 
@@ -24,43 +30,6 @@ async def startup_event():
             print(f"{pkg}={version}")
         except importlib.metadata.PackageNotFoundError:
             print(f"{pkg}=<not-installed>")
-
-
-DEFAULT_DEV_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-# Vercel creates both per-deployment hostnames and branch aliases for Preview.
-# Keep matching scoped to this exact project/team instead of opening CORS with *.
-DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX = (
-    r"^https://medi-matrix-[a-z0-9-]+-park-yun-hus-projects\.vercel\.app$"
-)
-
-
-def _build_cors_origins():
-    explicit = os.environ.get("ALLOWED_ORIGINS", "").strip()
-    if explicit:
-        return [
-            origin.strip().rstrip("/")
-            for origin in explicit.split(",")
-            if origin.strip()
-        ]
-
-    if os.environ.get("APP_ENV", "development").lower() == "production":
-        return []
-
-    return DEFAULT_DEV_ORIGINS.copy()
-
-
-def _build_cors_origin_regex():
-    explicit = os.environ.get("ALLOWED_ORIGIN_REGEX", "").strip()
-    if explicit:
-        return explicit
-
-    if os.environ.get("APP_ENV", "development").lower() == "production":
-        return DEFAULT_VERCEL_PREVIEW_ORIGIN_REGEX
-
-    return None
 
 
 # Configure CORS. Production keeps exact origins from ALLOWED_ORIGINS while also
