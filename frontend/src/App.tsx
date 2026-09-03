@@ -56,7 +56,6 @@ function MainApp() {
     setModelUrl,
     caseId,
     setCaseId,
-    patientId,
     setPatientId,
     meshId,
     setMeshId,
@@ -172,7 +171,6 @@ function MainApp() {
   }) => {
     const resolvedCaseId = data.case_id || data.patient_id
     setCaseId(resolvedCaseId)
-    // Golden-Time dashboard compatibility. Public UI treats this value as Case ID.
     setPatientId(resolvedCaseId)
     setModelUrl(data.glb_url || data.signed_url)
     setMeshId(data.mesh_id)
@@ -221,14 +219,7 @@ function MainApp() {
       setIsStreaming(true)
       setConnectionStatus('connected')
       setAppStatus('STREAMING')
-      ws.send(
-        JSON.stringify({
-          type: 'auth',
-          access_token: accessToken,
-          case_id: activeCaseId,
-          volume,
-        }),
-      )
+      ws.send(JSON.stringify({ type: 'auth', access_token: accessToken, case_id: activeCaseId, volume }))
       if (!isReconnect) toast.success('Case Vitals Replay가 시작되었습니다.')
     }
 
@@ -238,7 +229,6 @@ function MainApp() {
         toast.error(data.message || 'Vitals Replay 중 오류가 발생했습니다.')
         return
       }
-      // Older backends may emit completed. Reconnect while monitoring intent remains.
       if (data.status === 'completed') {
         ws.close()
         return
@@ -265,16 +255,14 @@ function MainApp() {
       }
       if (data.triage_level) {
         const nextTriageLevel = String(data.triage_level)
-        setRedSnapshot((current) =>
-          reduceRedSnapshot(current, {
-            patientId: activeCaseId,
-            triageLevel: nextTriageLevel,
-            lesionVolume: volume,
-            triggeringCondition: triggeringConditionRef.current,
-            hasSepsisRisk: sepsisHighRiskRef.current,
-            modality,
-          }),
-        )
+        setRedSnapshot((current) => reduceRedSnapshot(current, {
+          patientId: activeCaseId,
+          triageLevel: nextTriageLevel,
+          lesionVolume: volume,
+          triggeringCondition: triggeringConditionRef.current,
+          hasSepsisRisk: sepsisHighRiskRef.current,
+          modality,
+        }))
         setTriageLevel(nextTriageLevel)
       }
     }
@@ -363,13 +351,7 @@ function MainApp() {
       clearLiveContext()
       setHasVitalsFile(false)
       setAppStatus('PROCESSING')
-      return {
-        toastId: toast.loading(
-          isDemoMode
-            ? `[${modality}] 합성 3D 의료영상 처리 및 Case 생성 중...`
-            : `[${modality}] 의료영상 처리 중...`,
-        ),
-      }
+      return { toastId: toast.loading(isDemoMode ? `[${modality}] 합성 3D 의료영상 처리 및 Case 생성 중...` : `[${modality}] 의료영상 처리 중...`) }
     },
     onSuccess: (data, _variables, context) => {
       const activeCaseId = applyImageResult(data)
@@ -377,9 +359,7 @@ function MainApp() {
     },
     onError: (error: any, _variables, context) => {
       setAppStatus('IDLE')
-      toast.error(error?.response?.data?.detail || error?.message || '의료영상 처리에 실패했습니다.', {
-        id: context?.toastId,
-      })
+      toast.error(error?.response?.data?.detail || error?.message || '의료영상 처리에 실패했습니다.', { id: context?.toastId })
     },
     onSettled: () => {
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -465,23 +445,19 @@ function MainApp() {
     return level
   }
 
-  const isTriageActionable = Boolean(
-    triageLevel && (triageLevel.includes('YELLOW') || triageLevel.includes('RED')),
-  )
+  const isTriageActionable = Boolean(triageLevel && (triageLevel.includes('YELLOW') || triageLevel.includes('RED')))
 
   const openLiveTriageDashboard = () => {
     if (!caseId || !triageLevel || !isTriageActionable) return
     const normalized = triageLevel.trim().toUpperCase()
-    const snapshot = normalized.startsWith('RED') && redSnapshot
-      ? { ...redSnapshot }
-      : {
-          patientId: caseId,
-          triageLevel,
-          lesionVolume,
-          triggeringCondition: triggeringConditionRef.current,
-          hasSepsisRisk: sepsisHighRiskRef.current,
-          modality,
-        }
+    const snapshot = normalized.startsWith('RED') && redSnapshot ? { ...redSnapshot } : {
+      patientId: caseId,
+      triageLevel,
+      lesionVolume,
+      triggeringCondition: triggeringConditionRef.current,
+      hasSepsisRisk: sepsisHighRiskRef.current,
+      modality,
+    }
     setDashboardSnapshot(snapshot)
     setShowDashboard(true)
   }
@@ -489,7 +465,6 @@ function MainApp() {
   return (
     <div className="app-container">
       <Toaster position="top-right" theme="dark" richColors />
-
       <header className="header">
         <div className="logo">
           <Brain className="icon" size={32} style={{ display: modality === 'Brain' ? 'block' : 'none' }} />
@@ -500,15 +475,9 @@ function MainApp() {
           중증환자의 영상·Vitals를 전원 의사결정까지 연결하는 E2E 프로토타입 · 합성 데이터 데모
         </div>
         <div className="tabs">
-          <button className={`tab ${modality === 'Brain' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Brain')}>
-            <Brain size={18} /> Brain
-          </button>
-          <button className={`tab ${modality === 'Lung' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Lung')}>
-            <Stethoscope size={18} /> Lung
-          </button>
-          <button className="tab" style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }} onClick={handleSignOut}>
-            데모 세션 초기화
-          </button>
+          <button className={`tab ${modality === 'Brain' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Brain')}><Brain size={18} /> Brain</button>
+          <button className={`tab ${modality === 'Lung' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Lung')}><Stethoscope size={18} /> Lung</button>
+          <button className="tab" style={{ marginLeft: 'auto', backgroundColor: '#ef4444', color: 'white' }} onClick={handleSignOut}>데모 세션 초기화</button>
         </div>
       </header>
 
@@ -516,62 +485,33 @@ function MainApp() {
         <aside className="sidebar">
           <div className="control-group">
             <h3>Transfer Support Demo</h3>
-
             {isDemoMode && (
               <div style={{ padding: 12, backgroundColor: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.22)', borderRadius: 10, marginBottom: 14, fontSize: '0.82rem' }}>
                 <strong style={{ color: '#60a5fa' }}>지역 응급실 → 상급병원 전원 지원</strong>
-                <div style={{ marginTop: 6, color: '#d1d5db', lineHeight: 1.5 }}>
-                  현재 공개 버전은 PACS·EMR 연동 전 단계의 합성 입력 E2E 데모입니다. 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.
-                </div>
+                <div style={{ marginTop: 6, color: '#d1d5db', lineHeight: 1.5 }}>현재 공개 버전은 PACS·EMR 연동 전 단계의 합성 입력 E2E 데모입니다. 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.</div>
               </div>
             )}
-
-            <button
-              className="btn primary"
-              onClick={() => void startDemoCase()}
-              disabled={demoStarting || uploadMutation.isPending}
-              data-testid="demo-case-button"
-              style={{ width: '100%', marginBottom: 10, minHeight: 46 }}
-            >
+            <button className="btn primary" onClick={() => void startDemoCase()} disabled={demoStarting || uploadMutation.isPending} data-testid="demo-case-button" style={{ width: '100%', marginBottom: 10, minHeight: 46 }}>
               {demoStarting ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
               {demoStarting ? 'Demo Case 준비 중...' : 'Demo Case 한 번에 실행'}
             </button>
-
             {caseId && (
               <div style={{ padding: '9px 10px', backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 8, marginBottom: 12, fontSize: '0.78rem' }}>
-                <strong style={{ color: '#fff' }}>Case ID</strong>
-                <div style={{ color: '#60a5fa', fontFamily: 'monospace', marginTop: 3 }}>{caseId}</div>
-                <div style={{ color: '#9ca3af', marginTop: 3 }}>비식별 Demo Encounter ID · 병원 MRN이 아닙니다.</div>
+                <strong style={{ color: '#fff' }}>Case ID</strong><div style={{ color: '#60a5fa', fontFamily: 'monospace', marginTop: 3 }}>{caseId}</div><div style={{ color: '#9ca3af', marginTop: 3 }}>비식별 Demo Encounter ID · 병원 MRN이 아닙니다.</div>
               </div>
             )}
-
-            <div className="slider-container">
-              <label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label>
-              <input id="opacity-slider" type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} />
-            </div>
-
+            <div className="slider-container"><label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label><input id="opacity-slider" type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} /></div>
             <details style={{ marginTop: 12 }}>
               <summary style={{ cursor: 'pointer', color: '#a1a1aa', fontSize: '0.82rem' }}>직접 파일로 테스트 (MVP 입력 어댑터)</summary>
               <div className="action-buttons" style={{ marginTop: 10 }}>
                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".npy,.nii,.nii.gz" onChange={handleFileUpload} />
-                <button className="btn primary" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending || monitoringEnabled}>
-                  <Upload size={18} /> Case 의료영상 연결
-                </button>
+                <button className="btn primary" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending || monitoringEnabled}><Upload size={18} /> Case 의료영상 연결</button>
                 <input type="file" ref={csvInputRef} onChange={handleCsvUpload} accept=".csv" style={{ display: 'none' }} />
-                <button className="btn primary" onClick={() => csvInputRef.current?.click()} disabled={!caseId || appStatus === 'PROCESSING' || monitoringEnabled}>
-                  <Upload size={18} /> {hasVitalsFile ? 'Case Vitals 연결 완료' : 'Case Vitals CSV 연결'}
-                </button>
+                <button className="btn primary" onClick={() => csvInputRef.current?.click()} disabled={!caseId || appStatus === 'PROCESSING' || monitoringEnabled}><Upload size={18} /> {hasVitalsFile ? 'Case Vitals 연결 완료' : 'Case Vitals CSV 연결'}</button>
               </div>
             </details>
-
-            <button
-              className={`btn secondary ${monitoringEnabled ? 'streaming-active' : ''}`}
-              disabled={!caseId || !hasVitalsFile || appStatus === 'PROCESSING'}
-              onClick={toggleStreaming}
-              style={{ width: '100%', marginTop: 12, backgroundColor: monitoringEnabled ? 'var(--grad-danger)' : undefined, color: monitoringEnabled ? 'white' : undefined }}
-            >
-              {monitoringEnabled ? <WifiOff size={18} /> : <Wifi size={18} />}
-              {monitoringEnabled ? '실시간 모니터링 중단' : 'Case Vitals 모니터링 시작'}
+            <button className={`btn secondary ${monitoringEnabled ? 'streaming-active' : ''}`} disabled={!caseId || !hasVitalsFile || appStatus === 'PROCESSING'} onClick={toggleStreaming} style={{ width: '100%', marginTop: 12, backgroundColor: monitoringEnabled ? 'var(--grad-danger)' : undefined, color: monitoringEnabled ? 'white' : undefined }}>
+              {monitoringEnabled ? <WifiOff size={18} /> : <Wifi size={18} />}{monitoringEnabled ? '실시간 모니터링 중단' : 'Case Vitals 모니터링 시작'}
             </button>
           </div>
 
@@ -580,109 +520,38 @@ function MainApp() {
             {caseId ? (
               <div style={{ marginTop: '0.5rem' }}>
                 <div style={{ padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, marginBottom: '0.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <strong style={{ color: '#fff' }}>[Vision] 3D 병변 Context</strong>
-                  <div style={{ color: '#60a5fa', fontSize: '1.05rem', marginTop: 4 }}>{lesionVolume.toLocaleString()} voxels</div>
-                  {isDemoMode && <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: 5 }}>합성/결정론적 mask 기반 Vision demo · 검증된 AI segmentation 아님</div>}
+                  <strong style={{ color: '#fff' }}>[Vision] 3D 병변 Context</strong><div style={{ color: '#60a5fa', fontSize: '1.05rem', marginTop: 4 }}>{lesionVolume.toLocaleString()} voxels</div>{isDemoMode && <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: 5 }}>합성/결정론적 mask 기반 Vision demo · 검증된 AI segmentation 아님</div>}
                 </div>
-
                 {hasVitalsFile && (
                   <div data-testid="vitals-panel" style={{ padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, marginBottom: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden' }}>
-                    {isStreaming && <div className="scanner-line" />}
-                    <strong style={{ color: '#fff' }}>[Vitals] Case 시계열 Replay</strong>
-                    <div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 6 }}>
-                      HR {Math.round(vitals.hr)} bpm · BP {Math.round(vitals.bpSys)}/{Math.round(vitals.bpDia)} mmHg
-                    </div>
-                    <div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 2 }}>
-                      Resp {Math.round(vitals.resp)}/min · Temp {vitals.temp.toFixed(1)}°C · SpO2 {Math.round(vitals.spo2)}%
-                    </div>
+                    {isStreaming && <div className="scanner-line" />}<strong style={{ color: '#fff' }}>[Vitals] Case 시계열 Replay</strong><div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 6 }}>HR {Math.round(vitals.hr)} bpm · BP {Math.round(vitals.bpSys)}/{Math.round(vitals.bpDia)} mmHg</div><div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 2 }}>Resp {Math.round(vitals.resp)}/min · Temp {vitals.temp.toFixed(1)}°C · SpO2 {Math.round(vitals.spo2)}%</div>
                     {connectionStatus === 'reconnecting' && <div style={{ color: '#fbbf24', fontSize: '0.73rem', marginTop: 7 }}>재연결 중 · 마지막 정상 Vitals 값을 유지하고 있습니다.</div>}
-                    {diseaseRisks && (
-                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8, fontSize: '0.82rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sepsis-like</span><strong>{diseaseRisks.sepsis}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>ARDS-like</span><strong>{diseaseRisks.ards}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Shock-like</span><strong>{diseaseRisks.shock}</strong></div>
-                      </div>
-                    )}
+                    {diseaseRisks && <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8, fontSize: '0.82rem' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sepsis-like</span><strong>{diseaseRisks.sepsis}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>ARDS-like</span><strong>{diseaseRisks.ards}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Shock-like</span><strong>{diseaseRisks.shock}</strong></div></div>}
                   </div>
                 )}
-
                 {hasVitalsFile && (
                   <div data-testid="triage-panel" style={{ padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, marginBottom: '0.5rem', border: `1px solid ${getTriageColor(triageLevel)}55` }}>
                     <strong style={{ color: '#fff' }}>Decision Engine · Demo Policy</strong>
-                    {decision ? (
-                      <div style={{ marginTop: 8, fontSize: '0.82rem', lineHeight: 1.55 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vitals Risk</span><span>{decision.vitals_risk.toFixed(2)}</span></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vision Context</span><span>+{decision.vision_context.toFixed(2)}</span></div>
-                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.14)', marginTop: 4, paddingTop: 4, display: 'flex', justifyContent: 'space-between' }}><span>Triage Score</span><strong>{decision.triage_score.toFixed(2)}</strong></div>
-                      </div>
-                    ) : (
-                      <div style={{ color: '#9ca3af', fontSize: '0.78rem', marginTop: 7 }}>Vitals 수신 후 점수 계산이 시작됩니다.</div>
-                    )}
-                    <div style={{ color: getTriageColor(triageLevel), fontWeight: 800, fontSize: '1.15rem', marginTop: 8 }}>{getTriageDisplayText(triageLevel)}</div>
-                    <div style={{ color: '#9ca3af', fontSize: '0.70rem', marginTop: 5 }}>현재 임계값은 제품 E2E 흐름 검증을 위한 데모 정책이며 임상 기준이 아닙니다.</div>
-                    <button
-                      onClick={openLiveTriageDashboard}
-                      disabled={!isTriageActionable}
-                      style={{
-                        marginTop: 10,
-                        width: '100%',
-                        padding: 9,
-                        borderRadius: 6,
-                        border: `1px solid ${getTriageColor(triageLevel)}`,
-                        backgroundColor: isTriageActionable ? `${getTriageColor(triageLevel)}22` : 'rgba(255,255,255,0.04)',
-                        color: isTriageActionable ? getTriageColor(triageLevel) : '#6b7280',
-                        cursor: isTriageActionable ? 'pointer' : 'not-allowed',
-                      }}
-                    >
-                      <Activity size={17} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-                      {triageLevel?.includes('RED')
-                        ? 'RED · 긴급 전원 병원 탐색'
-                        : triageLevel?.includes('YELLOW')
-                          ? 'YELLOW · 전원 병원 후보 확인'
-                          : '응급도 계산 후 Golden-Time 탐색 가능'}
-                    </button>
+                    {decision ? <div style={{ marginTop: 8, fontSize: '0.82rem', lineHeight: 1.55 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vitals Risk</span><span>{decision.vitals_risk.toFixed(2)}</span></div><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vision Context</span><span>+{decision.vision_context.toFixed(2)}</span></div><div style={{ borderTop: '1px solid rgba(255,255,255,0.14)', marginTop: 4, paddingTop: 4, display: 'flex', justifyContent: 'space-between' }}><span>Triage Score</span><strong>{decision.triage_score.toFixed(2)}</strong></div></div> : <div style={{ color: '#9ca3af', fontSize: '0.78rem', marginTop: 7 }}>Vitals 수신 후 점수 계산이 시작됩니다.</div>}
+                    <div style={{ color: getTriageColor(triageLevel), fontWeight: 800, fontSize: '1.15rem', marginTop: 8 }}>{getTriageDisplayText(triageLevel)}</div><div style={{ color: '#9ca3af', fontSize: '0.70rem', marginTop: 5 }}>현재 임계값은 제품 E2E 흐름 검증을 위한 데모 정책이며 임상 기준이 아닙니다.</div>
+                    <button onClick={openLiveTriageDashboard} disabled={!isTriageActionable} style={{ marginTop: 10, width: '100%', padding: 9, borderRadius: 6, border: `1px solid ${getTriageColor(triageLevel)}`, backgroundColor: isTriageActionable ? `${getTriageColor(triageLevel)}22` : 'rgba(255,255,255,0.04)', color: isTriageActionable ? getTriageColor(triageLevel) : '#6b7280', cursor: isTriageActionable ? 'pointer' : 'not-allowed' }}><Activity size={17} style={{ verticalAlign: 'middle', marginRight: 6 }} />{triageLevel?.includes('RED') ? 'RED · 긴급 전원 병원 탐색' : triageLevel?.includes('YELLOW') ? 'YELLOW · 전원 병원 후보 확인' : '응급도 계산 후 Golden-Time 탐색 가능'}</button>
                   </div>
                 )}
-
-                <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, fontSize: '0.78rem' }}>
-                  <strong>연결 상태:</strong> <span style={{ color: getStatusColor(), fontWeight: 700 }}>{getStatusText()}</span>
-                </div>
+                <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, fontSize: '0.78rem' }}><strong>연결 상태:</strong> <span style={{ color: getStatusColor(), fontWeight: 700 }}>{getStatusText()}</span></div>
               </div>
-            ) : (
-              <p className="text-sm text-gray">`Demo Case 한 번에 실행`을 누르면 합성 Brain 영상과 Vitals가 하나의 Case로 연결됩니다.</p>
-            )}
+            ) : <p className="text-sm text-gray">`Demo Case 한 번에 실행`을 누르면 합성 Brain 영상과 Vitals가 하나의 Case로 연결됩니다.</p>}
           </div>
         </aside>
-
-        <section className="viewer-container">
-          <ThreeViewer onLoadFailure={handleLoadFailure} />
-        </section>
+        <section className="viewer-container"><ThreeViewer onLoadFailure={handleLoadFailure} /></section>
       </main>
 
-      {showDashboard && dashboardSnapshot && (
-        <EmergencyDashboard
-          onClose={() => {
-            setShowDashboard(false)
-            setDashboardSnapshot(null)
-          }}
-          patientId={dashboardSnapshot.patientId}
-          triageLevel={triageLevel ?? dashboardSnapshot.triageLevel}
-          lesionVolume={dashboardSnapshot.lesionVolume}
-          triggeringCondition={dashboardSnapshot.triggeringCondition}
-          hasSepsisRisk={dashboardSnapshot.hasSepsisRisk}
-          modality={dashboardSnapshot.modality}
-        />
-      )}
+      {showDashboard && dashboardSnapshot && <EmergencyDashboard onClose={() => { setShowDashboard(false); setDashboardSnapshot(null) }} patientId={dashboardSnapshot.patientId} triageLevel={triageLevel ?? dashboardSnapshot.triageLevel} lesionVolume={dashboardSnapshot.lesionVolume} triggeringCondition={dashboardSnapshot.triggeringCondition} hasSepsisRisk={dashboardSnapshot.hasSepsisRisk} modality={dashboardSnapshot.modality} />}
     </div>
   )
 }
 
 function App() {
-  return (
-    <AuthProvider>
-      <MainApp />
-    </AuthProvider>
-  )
+  return <AuthProvider><MainApp /></AuthProvider>
 }
 
 export default App
