@@ -1,61 +1,79 @@
+"""Vitals risk adapter used by the Medi-Matrix public prototype.
+
+The deployed competition flow intentionally runs in ``INFERENCE_MODE=demo``.
+The real IMST-Mamba research model lives in the ``IMST-Mamba`` submodule and
+has a different input/output contract from this demo adapter:
+
+- research input: 34 clinical time-series features plus missingness/time tensors
+- research output: step-wise sepsis probability (+ auxiliary mortality/SOFA)
+- demo input: 6 synthetic Vitals columns
+- demo output: three deterministic, non-clinical pattern scores
+
+Because those contracts are not interchangeable, ``INFERENCE_MODE=model``
+fails closed until a verified research checkpoint, normalization statistics,
+and the matching preprocessing adapter are connected end-to-end.
+"""
+
+from __future__ import annotations
+
 import os
 
 
+class UnverifiedModelModeError(RuntimeError):
+    """Raised when code tries to enable a model path that has not been verified."""
+
+
+MODEL_COMPATIBILITY = {
+    "research_repo": "YunhuPark/IMST-Mamba",
+    "research_commit": "d8e5762b72f2b9e812b1ae5d8036c290c024781b",
+    "research_features": 34,
+    "research_contract": "x + m + delta_t + s + attn_mask -> sepsis probability",
+    "demo_features": 6,
+    "demo_contract": "hr,bpSys,bpDia,resp,temp,spo2 -> non-clinical pattern scores",
+    "model_mode_ready": False,
+}
+
+
+def _model_mode_error() -> UnverifiedModelModeError:
+    return UnverifiedModelModeError(
+        "INFERENCE_MODE=model is disabled because the Medi-Matrix runtime is not "
+        "yet compatible with the verified IMST-Mamba research pipeline. The research "
+        "model expects 34 clinical features plus missingness/time tensors and produces "
+        "a sepsis probability, while the current demo stream contains only 6 Vitals "
+        "and exposes three synthetic pattern scores. Connect the matching research "
+        "checkpoint, normalization stats, and preprocessing adapter before enabling "
+        "model mode."
+    )
+
+
 class MambaSystemicPredictor:
+    """Deterministic synthetic-Vitals scorer for the public product demo.
+
+    This class does *not* represent the real IMST-Mamba architecture. It stays
+    lightweight so the public demo can validate the E2E product flow without
+    importing PyTorch or implying clinical model inference.
+    """
+
     def __init__(self):
-        self.mode = os.environ.get("INFERENCE_MODE", "demo")
-        self.model = None
-        self.device = None
-
+        self.mode = os.environ.get("INFERENCE_MODE", "demo").strip().lower()
+        if self.mode not in {"demo", "model"}:
+            raise ValueError("INFERENCE_MODE must be either 'demo' or 'model'.")
         if self.mode == "model":
-            # Lazy import torch
-            import torch
-            import torch.nn as nn
-
-            class DummyMambaModel(nn.Module):
-                """
-                실제 IMST-Mamba 아키텍처의 뼈대(Skeleton)입니다.
-                사용자가 진짜 가중치를 넣을 때까지 이 구조가 대신 에러 핸들링을 수행합니다.
-                """
-
-                def __init__(self, input_dim=6, hidden_dim=64):
-                    super(DummyMambaModel, self).__init__()
-                    self.fc1 = nn.Linear(input_dim, hidden_dim)
-                    self.fc2 = nn.Linear(hidden_dim, 3)
-                    self.sigmoid = nn.Sigmoid()
-
-                def forward(self, x):
-                    out = self.fc1(x[:, -1, :])
-                    out = torch.relu(out)
-                    out = self.fc2(out)
-                    return self.sigmoid(out)
-
-            self.model_path = os.path.join(
-                os.path.dirname(__file__), "../models/imst_mamba_systemic_model.pth"
-            )
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-            if not os.path.exists(self.model_path):
-                raise FileNotFoundError(
-                    f"[Real-Data Policy Error] 실제 Mamba Systemic 모델 파일이 없습니다: {self.model_path}. "
-                    "검증된 모델 가중치를 해당 경로에 넣어주세요."
-                )
-
-            self.model = DummyMambaModel().to(self.device)
-            self.model.load_state_dict(
-                torch.load(self.model_path, map_location=self.device, weights_only=True)
-            )
-            self.model.eval()
+            # Fail before importing torch or touching any checkpoint. The former
+            # 6-feature DummyMambaModel was not architecture-compatible with the
+            # actual 34-feature IMST-Mamba research implementation.
+            raise _model_mode_error()
 
     @staticmethod
     def _clamp01(value: float) -> float:
         return max(0.0, min(float(value), 1.0))
 
     def _demo_scores(self, row: dict) -> dict[str, float]:
-        """합성 Vitals의 변화가 화면에서 재현되도록 만든 결정론적 데모 점수.
+        """Return deterministic pattern scores for bundled synthetic Vitals.
 
-        임상 확률이나 진단 결과가 아니다. 각 병증 유사 패턴을 서로 다른
-        Vitals 조합으로 계산해 Stable/Warning/Critical 구간의 차이를 보여준다.
+        These are not calibrated probabilities, diagnoses, or clinical rules.
+        They only make Stable/Warning/Critical transitions reproducible in the
+        competition demo.
         """
         hr = float(row.get("hr", 80))
         bp_sys = float(row.get("bpSys", 120))
@@ -86,40 +104,10 @@ class MambaSystemicPredictor:
             "shock": min(shock, 0.95),
         }
 
-    def predict(self, window_data):
-        """
-        window_data: list of dicts (시계열 데이터)
-        반환값: demo 모드에서는 합성 Vitals 기반 비임상 위험 점수,
-        model 모드에서는 로드된 모델의 출력값.
-        """
-        if self.mode == "demo":
-            if not window_data:
-                return {"sepsis": 0.0, "ards": 0.0, "shock": 0.0}
-            return self._demo_scores(window_data[-1])
-
-        # model 모드 추론
-        import torch
-
-        features = []
-        for row in window_data:
-            features.append(
-                [
-                    float(row.get("hr", 80)),
-                    float(row.get("bpSys", 120)),
-                    float(row.get("bpDia", 80)),
-                    float(row.get("resp", 16)),
-                    float(row.get("temp", 36.5)),
-                    float(row.get("spo2", 98)),
-                ]
-            )
-
-        x = torch.tensor([features], dtype=torch.float32).to(self.device)
-
-        with torch.no_grad():
-            probs = self.model(x)[0].tolist()
-
-        return {
-            "sepsis": probs[0],
-            "ards": probs[1],
-            "shock": probs[2],
-        }
+    def predict(self, window_data: list[dict]) -> dict[str, float]:
+        """Score the latest synthetic Vitals row in demo mode."""
+        if self.mode != "demo":
+            raise _model_mode_error()
+        if not window_data:
+            return {"sepsis": 0.0, "ards": 0.0, "shock": 0.0}
+        return self._demo_scores(window_data[-1])
