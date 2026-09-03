@@ -73,6 +73,27 @@ export interface ProcessMaskResponse {
   lesion_volume: number;
 }
 
+export interface TransferDemoResponse {
+  status: 'success';
+  case_id: string;
+  scenario: 'ed_interhospital_transfer_support';
+  scenario_label: string;
+  data_mode: 'synthetic_bundled_demo';
+  clinical_identifier: false;
+  vitals_attached: true;
+  image: ProcessMaskResponse;
+  integration_target: {
+    imaging: string;
+    vitals: string;
+    encounter: string;
+  };
+}
+
+export const bootstrapTransferDemoCase = async (): Promise<TransferDemoResponse> => {
+  const response = await medicalApi.post<TransferDemoResponse>('/demo/transfer-case');
+  return response.data;
+};
+
 export const processMedicalMask = async (file: File, modality: string = 'Brain'): Promise<ProcessMaskResponse> => {
   const formData = new FormData();
   formData.append('file', file);
