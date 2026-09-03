@@ -4,10 +4,11 @@ import uvicorn
 from dotenv import load_dotenv
 from api.router import router as medical_router
 from api.case_router import case_router
+from api.demo_router import demo_router
 
 load_dotenv()
 
-app = FastAPI(title="Medical Image 3D Viewer API")
+app = FastAPI(title="Medi-Matrix Transfer Decision Support API")
 
 @app.on_event("startup")
 async def startup_event():
@@ -35,10 +36,15 @@ app.add_middleware(
 
 app.include_router(medical_router, prefix="/api/v1")
 app.include_router(case_router, prefix="/api/v1")
+app.include_router(demo_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to Medical Image 3D Viewer API"}
+    return {
+        "message": "Medi-Matrix transfer decision-support prototype API",
+        "target_scenario": "local ED to higher-level hospital transfer support",
+        "clinical_use": False,
+    }
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -69,7 +75,7 @@ def health_ready():
         ]
         for var in required_vars:
             if not os.environ.get(var):
-                raise HTTPException(status_code=503, detail=f"Missing env var")
+                raise HTTPException(status_code=503, detail="Missing env var")
                 
     if inference_mode == "model":
         try:
