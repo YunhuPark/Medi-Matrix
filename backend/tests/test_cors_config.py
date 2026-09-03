@@ -18,6 +18,10 @@ def test_production_uses_scoped_vercel_preview_regex(monkeypatch):
         origin_regex,
         "https://medi-matrix-1fz1j6ihb-park-yun-hus-projects.vercel.app",
     )
+    assert re.fullmatch(
+        origin_regex,
+        "https://medi-matrix-git-ai-championship-20-fb627b-park-yun-hus-projects.vercel.app",
+    )
 
 
 def test_preview_regex_rejects_unrelated_origins(monkeypatch):
