@@ -1,9 +1,6 @@
 name: Train Real Vitals Baseline
 
 on:
-  push:
-    branches:
-      - feat/real-vitals-ai-pipeline
   workflow_dispatch:
 
 permissions:
