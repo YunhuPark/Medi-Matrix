@@ -1,15 +1,6 @@
 name: Train Real Vitals XGBoost
 
 on:
-  push:
-    branches:
-      - feat/real-vitals-ai-pipeline
-    paths:
-      - 'ml/train_xgboost.py'
-      - 'ml/train_baseline.py'
-      - 'ml/prepare_physionet2019.py'
-      - 'ml/requirements.txt'
-      - '.github/workflows/train-real-vitals-xgboost.yml'
   workflow_dispatch:
 
 permissions:
