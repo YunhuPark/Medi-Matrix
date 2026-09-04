@@ -1,11 +1,6 @@
 name: Train Real Vitals XGBoost
 
 on:
-  push:
-    branches:
-      - feat/real-vitals-ai-pipeline
-    paths:
-      - 'ml/training_trigger.txt'
   workflow_dispatch:
 
 permissions:
