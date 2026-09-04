@@ -2,11 +2,6 @@ name: Train Real Vitals GRU
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/real-vitals-ai-pipeline
-    paths:
-      - 'ml/gru_training_trigger.txt'
 
 permissions:
   contents: read
