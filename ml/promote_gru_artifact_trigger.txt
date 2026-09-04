@@ -1,0 +1,5 @@
+launch=2026-09-04
+source_run=33848975780
+artifact_id=9928005532
+model_sha256=182cebac9eae5bce456a904f00aee6e1d7650f3432e170783e437eab82eb202f
+purpose=promote reviewed GRU deploy artifact after model comparison

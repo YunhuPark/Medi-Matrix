@@ -10,8 +10,12 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      # Vision remains deterministic/demo until a verified imaging model exists.
       - key: INFERENCE_MODE
         value: demo
+      # Vitals is independently enabled with the reviewed PhysioNet GRU artifact.
+      - key: VITALS_INFERENCE_MODE
+        value: model
       - key: SUPABASE_STORAGE_BUCKET
         value: medical-meshes
       - key: SUPABASE_VITALS_BUCKET
