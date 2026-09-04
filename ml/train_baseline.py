@@ -18,8 +18,12 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from targets import add_future_sepsis_target, prediction_rows
+
 FEATURES = ["hr", "bpSys", "bpDia", "resp", "temp", "spo2"]
-TARGET = "label"
+SOURCE_LABEL = "label"
+TARGET = "target_6h"
+HORIZON_HOURS = 6
 
 
 def read_dataset(path: Path) -> pd.DataFrame:
@@ -27,16 +31,24 @@ def read_dataset(path: Path) -> pd.DataFrame:
         frame = pd.read_csv(path)
     else:
         frame = pd.read_parquet(path)
-    required = {"patient_id", *FEATURES, TARGET}
+    required = {"patient_id", "hour", *FEATURES, SOURCE_LABEL}
     missing = required - set(frame.columns)
     if missing:
         raise ValueError(f"dataset missing required columns: {sorted(missing)}")
     return frame
 
 
-def patient_split(frame: pd.DataFrame, seed: int, train_ratio: float = 0.7, val_ratio: float = 0.15):
+def patient_split(
+    frame: pd.DataFrame,
+    seed: int,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
+    target_col: str = TARGET,
+):
     rng = np.random.default_rng(seed)
-    patient_labels = frame.groupby("patient_id")[TARGET].max().astype(int)
+    if target_col not in frame.columns:
+        raise ValueError(f"dataset missing split target column: {target_col}")
+    patient_labels = frame.groupby("patient_id")[target_col].max().fillna(0).astype(int)
 
     train_ids: list[str] = []
     val_ids: list[str] = []
@@ -117,29 +129,35 @@ def build_model() -> Pipeline:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train an auditable 6-Vitals sepsis-risk baseline on PhysioNet 2019.")
+    parser = argparse.ArgumentParser(description="Train an auditable 6-Vitals 6h sepsis early-warning baseline on PhysioNet 2019.")
     parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--artifact-dir", type=Path, default=Path("ml/artifacts/vitals_logreg_v1"))
+    parser.add_argument("--artifact-dir", type=Path, default=Path("ml/artifacts/vitals_logreg_6h_v1"))
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    frame = read_dataset(args.data)
-    train, val, test, train_ids, val_ids, test_ids = patient_split(frame, args.seed)
+    frame = add_future_sepsis_target(read_dataset(args.data), horizon_hours=HORIZON_HOURS)
+    train_all, val_all, test_all, train_ids, val_ids, test_ids = patient_split(frame, args.seed)
+    train = prediction_rows(train_all)
+    val = prediction_rows(val_all)
+    test = prediction_rows(test_all)
 
     model = build_model()
-    model.fit(train[FEATURES], train[TARGET])
+    model.fit(train[FEATURES], train[TARGET].astype(int))
 
     val_prob = model.predict_proba(val[FEATURES])[:, 1]
-    threshold = choose_threshold(val[TARGET].to_numpy(), val_prob)
+    threshold = choose_threshold(val[TARGET].to_numpy(dtype=int), val_prob)
     test_prob = model.predict_proba(test[FEATURES])[:, 1]
 
     report = {
-        "model_name": "vitals_logreg_v1",
-        "task": "hourly sepsis risk signal from six vital signs",
+        "model_name": "vitals_logreg_6h_v1",
+        "task": "predict sepsis onset within the next 6 hours from six vital signs",
         "clinical_use": False,
         "source_dataset": "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0",
         "features": FEATURES,
-        "target": "SepsisLabel",
+        "source_label": "SepsisLabel",
+        "target": TARGET,
+        "prediction_horizon_hours": HORIZON_HOURS,
+        "post_onset_rows_excluded": True,
         "split": {
             "strategy": "patient-level stratified 70/15/15",
             "seed": args.seed,
@@ -147,8 +165,13 @@ def main() -> None:
             "validation_patients": len(val_ids),
             "test_patients": len(test_ids),
         },
-        "validation": metrics(val[TARGET].to_numpy(), val_prob, threshold),
-        "test": metrics(test[TARGET].to_numpy(), test_prob, threshold),
+        "prediction_rows": {
+            "train": len(train),
+            "validation": len(val),
+            "test": len(test),
+        },
+        "validation": metrics(val[TARGET].to_numpy(dtype=int), val_prob, threshold),
+        "test": metrics(test[TARGET].to_numpy(dtype=int), test_prob, threshold),
     }
 
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
