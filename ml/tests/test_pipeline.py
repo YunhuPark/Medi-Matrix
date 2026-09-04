@@ -11,6 +11,7 @@ if str(ML_ROOT) not in sys.path:
 
 from prepare_physionet2019 import convert_patient_file
 from train_baseline import FEATURES, patient_split
+from train_xgboost import add_temporal_features, model_features
 
 
 def test_physionet_columns_map_to_product_contract(tmp_path: Path):
@@ -68,3 +69,20 @@ def test_patient_split_has_no_patient_leakage():
     assert set(train["label"].unique()) == {0, 1}
     assert set(val["label"].unique()) == {0, 1}
     assert set(test["label"].unique()) == {0, 1}
+
+
+def test_temporal_features_use_only_current_and_past_rows():
+    frame = pd.DataFrame(
+        [
+            {"patient_id": "p1", "hour": 1, "hr": 80, "bpSys": 120, "bpDia": 75, "resp": 16, "temp": 36.5, "spo2": 98, "label": 0},
+            {"patient_id": "p1", "hour": 2, "hr": 90, "bpSys": 115, "bpDia": 72, "resp": 18, "temp": 36.7, "spo2": 97, "label": 0},
+            {"patient_id": "p1", "hour": 3, "hr": 120, "bpSys": 90, "bpDia": 58, "resp": 26, "temp": 38.0, "spo2": 91, "label": 1},
+        ]
+    )
+    temporal = add_temporal_features(frame)
+
+    assert temporal.loc[temporal["hour"] == 1, "hr_mean3"].iloc[0] == 80
+    assert temporal.loc[temporal["hour"] == 2, "hr_mean3"].iloc[0] == 85
+    assert temporal.loc[temporal["hour"] == 2, "hr_delta1"].iloc[0] == 10
+    assert temporal.loc[temporal["hour"] == 2, "hr_mean3"].iloc[0] != 100
+    assert "hr_mean6" in model_features()
