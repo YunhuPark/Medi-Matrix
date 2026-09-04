@@ -33,3 +33,9 @@ backend/data/users/
 backend/demo_datasets/generated/
 contest_artifacts/
 *.zip
+
+# Real-data ML pipeline: never commit downloaded patient-level source data or trained artifacts.
+ml/data/raw/
+ml/data/processed/
+ml/artifacts/
+*.joblib
