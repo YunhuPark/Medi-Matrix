@@ -33,23 +33,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RAW_DIR="$RUNNER_TEMP/physionet2019"
-          mkdir -p "$RAW_DIR/setA" "$RAW_DIR/setB"
+          RAW_ROOT="$RUNNER_TEMP/physionet-download"
+          mkdir -p "$RAW_ROOT"
 
-          curl -fL --retry 5 --retry-delay 3 \
-            https://physionet.org/files/challenge-2019/1.0.0/training_setA.zip \
-            -o "$RUNNER_TEMP/training_setA.zip"
-          curl -fL --retry 5 --retry-delay 3 \
-            https://physionet.org/files/challenge-2019/1.0.0/training_setB.zip \
-            -o "$RUNNER_TEMP/training_setB.zip"
+          wget -q -r -N -c -np \
+            https://physionet.org/files/challenge-2019/1.0.0/training/ \
+            -P "$RAW_ROOT"
 
-          sha256sum "$RUNNER_TEMP/training_setA.zip" "$RUNNER_TEMP/training_setB.zip" | tee "$RUNNER_TEMP/source_sha256.txt"
-          unzip -q "$RUNNER_TEMP/training_setA.zip" -d "$RAW_DIR/setA"
-          unzip -q "$RUNNER_TEMP/training_setB.zip" -d "$RAW_DIR/setB"
-
+          RAW_DIR="$RAW_ROOT/physionet.org/files/challenge-2019/1.0.0/training"
           PATIENT_COUNT=$(find "$RAW_DIR" -type f -name '*.psv' | wc -l | tr -d ' ')
           echo "patient_files=$PATIENT_COUNT"
           test "$PATIENT_COUNT" -ge 40000
+
+          find "$RAW_DIR" -type f -name '*.psv' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sha256sum \
+            | tee "$RUNNER_TEMP/source_tree_sha256.txt"
+
           echo "RAW_DIR=$RAW_DIR" >> "$GITHUB_ENV"
 
       - name: Convert real ICU records to Medi-Matrix six-Vitals schema
@@ -80,6 +81,7 @@ jobs:
           {
             "source": "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0",
             "official_url": "https://physionet.org/content/challenge-2019/1.0.0/",
+            "download_url": "https://physionet.org/files/challenge-2019/1.0.0/training/",
             "patient_files": $PATIENT_COUNT,
             "hourly_rows": $ROW_COUNT,
             "feature_contract": ["HR", "SBP", "DBP", "Resp", "Temp", "O2Sat"],
@@ -87,7 +89,7 @@ jobs:
             "training_run_sha": "${GITHUB_SHA}"
           }
           EOF
-          cp "$RUNNER_TEMP/source_sha256.txt" "$ARTIFACT_DIR/source_sha256.txt"
+          cp "$RUNNER_TEMP/source_tree_sha256.txt" "$ARTIFACT_DIR/source_tree_sha256.txt"
           cp "$RUNNER_TEMP/prepare.log" "$ARTIFACT_DIR/prepare.log"
           cp "$RUNNER_TEMP/train.log" "$ARTIFACT_DIR/train.log"
           cat "$ARTIFACT_DIR/metrics.json"
