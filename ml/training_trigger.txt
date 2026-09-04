@@ -1,0 +1,2 @@
+official-label-training-trigger: 2026-09-04
+reason: CI #169 passed official utility reference and no-double-shift regression tests.
