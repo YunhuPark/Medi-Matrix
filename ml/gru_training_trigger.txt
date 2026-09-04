@@ -1,0 +1,3 @@
+launch=2026-09-04
+purpose=full PhysioNet 2019 official-label GRU benchmark after CI #177 passed
+baseline_to_beat=temporal XGBoost test utility 0.32676802561969437, AUROC 0.7780088236049181, AUPRC 0.09686381211145084
