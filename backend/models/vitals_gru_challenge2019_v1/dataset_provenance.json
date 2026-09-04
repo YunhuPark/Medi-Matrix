@@ -1,0 +1,9 @@
+{
+  "source": "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0",
+  "download_source": "s3://physionet-open/challenge-2019/1.0.0/training/",
+  "patient_files": 40336,
+  "hourly_rows": 1552210,
+  "target": "official SepsisLabel (already shifted six hours ahead by PhysioNet)",
+  "training_run_sha": "ddbc7246a3a733ebac747fe9931e62b57a027738",
+  "device": "GitHub-hosted CPU runner"
+}

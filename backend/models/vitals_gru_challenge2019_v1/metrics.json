@@ -1,0 +1,86 @@
+{
+  "model_name": "vitals_gru_challenge2019_v1",
+  "task": "PhysioNet 2019 early sepsis warning from six vital signs with causal recurrent history",
+  "clinical_use": false,
+  "source_dataset": "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0",
+  "base_features": [
+    "hr",
+    "bpSys",
+    "bpDia",
+    "resp",
+    "temp",
+    "spo2"
+  ],
+  "model_features": [
+    "hr_value",
+    "hr_observed",
+    "hr_recency",
+    "bpSys_value",
+    "bpSys_observed",
+    "bpSys_recency",
+    "bpDia_value",
+    "bpDia_observed",
+    "bpDia_recency",
+    "resp_value",
+    "resp_observed",
+    "resp_recency",
+    "temp_value",
+    "temp_observed",
+    "temp_recency",
+    "spo2_value",
+    "spo2_observed",
+    "spo2_recency",
+    "hour_scaled"
+  ],
+  "target": "official SepsisLabel",
+  "target_semantics": "PhysioNet labels septic patients positive from t_sepsis - 6h onward; no additional label shift is applied.",
+  "preprocessing": "training-only statistics; patient-local forward fill; observed mask; hours-since-last-observation; no future rows",
+  "threshold_selection": "maximize normalized Challenge utility on validation patients only",
+  "split": {
+    "strategy": "patient-level stratified 70/15/15",
+    "seed": 42,
+    "train_patients": 28234,
+    "validation_patients": 6049,
+    "test_patients": 6053
+  },
+  "class_balance": {
+    "positive_rows": 19569,
+    "negative_rows": 1066392,
+    "pos_weight": 54.49394450406255
+  },
+  "architecture": {
+    "type": "single-layer GRU",
+    "input_size": 19,
+    "hidden_size": 48,
+    "dropout": 0.15,
+    "epochs_requested": 6,
+    "epochs_completed": 6,
+    "early_stopping_patience": 2
+  },
+  "validation": {
+    "auroc": 0.7908522682113053,
+    "auprc": 0.09899730203530621,
+    "threshold": 0.5996291004197073,
+    "challenge_utility": 0.3503717868685356,
+    "sensitivity": 0.5609521519596057,
+    "specificity": 0.8610757073668112,
+    "precision": 0.06873287570338509,
+    "tn": 195924,
+    "fp": 31610,
+    "fn": 1826,
+    "tp": 2333
+  },
+  "test": {
+    "auroc": 0.7946005008323214,
+    "auprc": 0.09500058131187976,
+    "threshold": 0.5996291004197073,
+    "challenge_utility": 0.34512958980235814,
+    "sensitivity": 0.5601719197707736,
+    "specificity": 0.8581747464925684,
+    "precision": 0.06699411731109715,
+    "tn": 197696,
+    "fp": 32672,
+    "fn": 1842,
+    "tp": 2346
+  }
+}
