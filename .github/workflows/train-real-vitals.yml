@@ -1,6 +1,15 @@
 name: Train Real Vitals Baseline
 
 on:
+  push:
+    branches:
+      - feat/real-vitals-ai-pipeline
+    paths:
+      - 'ml/targets.py'
+      - 'ml/train_baseline.py'
+      - 'ml/prepare_physionet2019.py'
+      - 'ml/requirements.txt'
+      - '.github/workflows/train-real-vitals.yml'
   workflow_dispatch:
 
 permissions:
@@ -44,13 +53,7 @@ jobs:
 
           PATIENT_COUNT=$(find "$RAW_DIR" -type f -name '*.psv' | wc -l | tr -d ' ')
           echo "patient_files=$PATIENT_COUNT"
-          test "$PATIENT_COUNT" -ge 40000
-
-          find "$RAW_DIR" -type f -name '*.psv' -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            | sha256sum \
-            | tee "$RUNNER_TEMP/source_tree_sha256.txt"
+          test "$PATIENT_COUNT" -eq 40336
 
           echo "RAW_DIR=$RAW_DIR" >> "$GITHUB_ENV"
 
@@ -62,11 +65,11 @@ jobs:
             --input "$RAW_DIR" \
             --output "$RUNNER_TEMP/physionet2019_vitals.csv" | tee "$RUNNER_TEMP/prepare.log"
 
-      - name: Train leakage-safe Logistic Regression baseline
+      - name: Train six-hour Logistic Regression baseline
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_DIR="$RUNNER_TEMP/vitals_logreg_v1"
+          ARTIFACT_DIR="$RUNNER_TEMP/vitals_logreg_6h_v1"
           python ml/train_baseline.py \
             --data "$RUNNER_TEMP/physionet2019_vitals.csv" \
             --artifact-dir "$ARTIFACT_DIR" | tee "$RUNNER_TEMP/train.log"
@@ -85,15 +88,14 @@ jobs:
             "download_source": "s3://physionet-open/challenge-2019/1.0.0/training/",
             "patient_files": $PATIENT_COUNT,
             "hourly_rows": $ROW_COUNT,
+            "prediction_horizon_hours": 6,
             "feature_contract": ["HR", "SBP", "DBP", "Resp", "Temp", "O2Sat"],
-            "target": "SepsisLabel",
+            "source_label": "SepsisLabel",
             "training_run_sha": "${GITHUB_SHA}"
           }
           EOF
-          cp "$RUNNER_TEMP/source_tree_sha256.txt" "$ARTIFACT_DIR/source_tree_sha256.txt"
           cp "$RUNNER_TEMP/prepare.log" "$ARTIFACT_DIR/prepare.log"
           cp "$RUNNER_TEMP/train.log" "$ARTIFACT_DIR/train.log"
-          cat "$ARTIFACT_DIR/metrics.json"
 
       - name: Publish metrics to job summary
         shell: bash
@@ -101,14 +103,11 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          p = Path(os.environ['ARTIFACT_DIR']) / 'metrics.json'
-          m = json.loads(p.read_text())
+          m = json.loads((Path(os.environ['ARTIFACT_DIR']) / 'metrics.json').read_text())
           t = m['test']
           v = m['validation']
-          summary = os.environ['GITHUB_STEP_SUMMARY']
-          with open(summary, 'a', encoding='utf-8') as f:
-              f.write('# Real Vitals baseline\n\n')
-              f.write(f"- Model: `{m['model_name']}`\n")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write('# Six-hour early-warning Logistic Regression\n\n')
               f.write(f"- Train/Val/Test patients: {m['split']['train_patients']} / {m['split']['validation_patients']} / {m['split']['test_patients']}\n")
               f.write(f"- Validation AUROC: {v['auroc']:.4f}\n")
               f.write(f"- Validation AUPRC: {v['auprc']:.4f}\n")
@@ -116,13 +115,12 @@ jobs:
               f.write(f"- Test AUPRC: **{t['auprc']:.4f}**\n")
               f.write(f"- Test sensitivity: {t['sensitivity']:.4f}\n")
               f.write(f"- Test specificity: {t['specificity']:.4f}\n")
-              f.write(f"- Threshold selected only on validation split: {t['threshold']:.4f}\n")
           PY
 
       - name: Upload trained baseline and evaluation artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: real-vitals-logreg-${{ github.sha }}
+          name: real-vitals-logreg-6h-${{ github.sha }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error
           retention-days: 14
