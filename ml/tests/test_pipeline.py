@@ -10,7 +10,8 @@ if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
 from prepare_physionet2019 import convert_patient_file
-from train_baseline import FEATURES, patient_split
+from targets import add_future_sepsis_target, prediction_rows
+from train_baseline import FEATURES, TARGET, patient_split
 from train_xgboost import add_temporal_features, model_features
 
 
@@ -32,27 +33,55 @@ def test_physionet_columns_map_to_product_contract(tmp_path: Path):
     assert converted["label"].tolist() == [0, 1]
 
 
+def test_six_hour_target_uses_only_pre_onset_rows():
+    frame = pd.DataFrame(
+        {
+            "patient_id": ["p1"] * 10 + ["p2"] * 4,
+            "hour": list(range(1, 11)) + list(range(1, 5)),
+            "hr": [80.0] * 14,
+            "bpSys": [120.0] * 14,
+            "bpDia": [75.0] * 14,
+            "resp": [16.0] * 14,
+            "temp": [36.5] * 14,
+            "spo2": [98.0] * 14,
+            "label": [0, 0, 0, 0, 0, 0, 0, 0, 1, 1] + [0, 0, 0, 0],
+        }
+    )
+
+    targeted = add_future_sepsis_target(frame, horizon_hours=6)
+    p1 = targeted[targeted["patient_id"] == "p1"].reset_index(drop=True)
+    assert p1[TARGET].tolist()[:2] == [0.0, 0.0]
+    assert p1[TARGET].tolist()[2:8] == [1.0] * 6
+    assert pd.isna(p1[TARGET].iloc[8])
+    assert pd.isna(p1[TARGET].iloc[9])
+
+    p2 = targeted[targeted["patient_id"] == "p2"]
+    assert p2[TARGET].tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert prediction_rows(targeted)[TARGET].isna().sum() == 0
+
+
 def test_patient_split_has_no_patient_leakage():
     rows = []
     for patient_index in range(40):
         patient_id = f"p{patient_index:06d}"
-        label = patient_index % 2
-        for hour in range(1, 4):
+        septic = patient_index % 2
+        for hour in range(1, 10):
+            source_label = 1 if septic and hour >= 8 else 0
             rows.append(
                 {
                     "patient_id": patient_id,
                     "hour": hour,
                     "hr": 80 + patient_index,
-                    "bpSys": 120 - label * 15,
-                    "bpDia": 75 - label * 8,
-                    "resp": 16 + label * 5,
-                    "temp": 36.5 + label,
-                    "spo2": 98 - label * 5,
-                    "label": label,
+                    "bpSys": 120 - septic * 15,
+                    "bpDia": 75 - septic * 8,
+                    "resp": 16 + septic * 5,
+                    "temp": 36.5 + septic,
+                    "spo2": 98 - septic * 5,
+                    "label": source_label,
                 }
             )
 
-    frame = pd.DataFrame(rows)
+    frame = add_future_sepsis_target(pd.DataFrame(rows), horizon_hours=6)
     train, val, test, train_ids, val_ids, test_ids = patient_split(frame, seed=42)
 
     train_set = set(train_ids)
@@ -66,17 +95,17 @@ def test_patient_split_has_no_patient_leakage():
     assert set(train["patient_id"]) == train_set
     assert set(val["patient_id"]) == val_set
     assert set(test["patient_id"]) == test_set
-    assert set(train["label"].unique()) == {0, 1}
-    assert set(val["label"].unique()) == {0, 1}
-    assert set(test["label"].unique()) == {0, 1}
+    assert set(prediction_rows(train)[TARGET].unique()) == {0.0, 1.0}
+    assert set(prediction_rows(val)[TARGET].unique()) == {0.0, 1.0}
+    assert set(prediction_rows(test)[TARGET].unique()) == {0.0, 1.0}
 
 
 def test_temporal_features_use_only_current_and_past_rows():
     frame = pd.DataFrame(
         [
-            {"patient_id": "p1", "hour": 1, "hr": 80, "bpSys": 120, "bpDia": 75, "resp": 16, "temp": 36.5, "spo2": 98, "label": 0},
-            {"patient_id": "p1", "hour": 2, "hr": 90, "bpSys": 115, "bpDia": 72, "resp": 18, "temp": 36.7, "spo2": 97, "label": 0},
-            {"patient_id": "p1", "hour": 3, "hr": 120, "bpSys": 90, "bpDia": 58, "resp": 26, "temp": 38.0, "spo2": 91, "label": 1},
+            {"patient_id": "p1", "hour": 1, "hr": 80, "bpSys": 120, "bpDia": 75, "resp": 16, "temp": 36.5, "spo2": 98, "label": 0, TARGET: 0.0},
+            {"patient_id": "p1", "hour": 2, "hr": 90, "bpSys": 115, "bpDia": 72, "resp": 18, "temp": 36.7, "spo2": 97, "label": 0, TARGET: 1.0},
+            {"patient_id": "p1", "hour": 3, "hr": 120, "bpSys": 90, "bpDia": 58, "resp": 26, "temp": 38.0, "spo2": 91, "label": 1, TARGET: float("nan")},
         ]
     )
     temporal = add_temporal_features(frame)
