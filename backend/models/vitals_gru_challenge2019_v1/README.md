@@ -14,4 +14,6 @@ Reviewed deploy artifact for the Medi-Matrix six-Vitals auxiliary risk signal.
 - Test AUPRC: `0.09500058131187976`
 - Validation-selected threshold: `0.5996291004197073`
 
+The Vitals runtime is controlled independently from Vision inference. Use `VITALS_INFERENCE_MODE=model` to load this checksum-pinned checkpoint; `VITALS_INFERENCE_MODE=demo` keeps the deterministic fallback. `INFERENCE_MODE` remains the separate Vision switch and stays `demo` until an imaging model is verified.
+
 This is a competition/research decision-support signal, **not a diagnosis or a clinically validated model**. The runtime verifies the model checksum before loading it and does not synthesize ARDS or shock probabilities from this checkpoint.
