@@ -5,6 +5,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ML_ROOT = Path(__file__).resolve().parents[1]
 if str(ML_ROOT) not in sys.path:
@@ -49,7 +50,6 @@ def test_official_label_is_not_shifted_again():
         }
     )
 
-    # The training target is exactly PhysioNet's SepsisLabel. No derived target_6h is allowed.
     assert "target_6h" not in frame.columns
     assert frame["label"].tolist() == [0, 0, 0, 0, 0, 1, 1, 1]
 
