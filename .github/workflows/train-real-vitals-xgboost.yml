@@ -1,6 +1,16 @@
 name: Train Real Vitals XGBoost
 
 on:
+  push:
+    branches:
+      - feat/real-vitals-ai-pipeline
+    paths:
+      - 'ml/targets.py'
+      - 'ml/train_xgboost.py'
+      - 'ml/train_baseline.py'
+      - 'ml/prepare_physionet2019.py'
+      - 'ml/requirements.txt'
+      - '.github/workflows/train-real-vitals-xgboost.yml'
   workflow_dispatch:
 
 permissions:
@@ -52,11 +62,11 @@ jobs:
             --input "$RAW_DIR" \
             --output "$RUNNER_TEMP/physionet2019_vitals.csv" | tee "$RUNNER_TEMP/prepare.log"
 
-      - name: Train temporal XGBoost
+      - name: Train six-hour temporal XGBoost
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_DIR="$RUNNER_TEMP/vitals_xgb_temporal_v1"
+          ARTIFACT_DIR="$RUNNER_TEMP/vitals_xgb_temporal_6h_v1"
           python ml/train_xgboost.py \
             --data "$RUNNER_TEMP/physionet2019_vitals.csv" \
             --artifact-dir "$ARTIFACT_DIR" | tee "$RUNNER_TEMP/train_xgb.log"
@@ -72,7 +82,7 @@ jobs:
           v = m['validation']
           t = m['test']
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
-              f.write('# Temporal XGBoost real-Vitals model\n\n')
+              f.write('# Six-hour temporal XGBoost real-Vitals model\n\n')
               f.write(f"- Train/Val/Test patients: {m['split']['train_patients']} / {m['split']['validation_patients']} / {m['split']['test_patients']}\n")
               f.write(f"- Validation AUROC: {v['auroc']:.4f}\n")
               f.write(f"- Validation AUPRC: {v['auprc']:.4f}\n")
@@ -93,6 +103,7 @@ jobs:
             "download_source": "s3://physionet-open/challenge-2019/1.0.0/training/",
             "patient_files": $PATIENT_COUNT,
             "hourly_rows": $ROW_COUNT,
+            "prediction_horizon_hours": 6,
             "training_run_sha": "${GITHUB_SHA}"
           }
           EOF
@@ -102,7 +113,7 @@ jobs:
       - name: Upload trained XGBoost artifact
         uses: actions/upload-artifact@v4
         with:
-          name: real-vitals-xgb-${{ github.sha }}
+          name: real-vitals-xgb-6h-${{ github.sha }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error
           retention-days: 14
