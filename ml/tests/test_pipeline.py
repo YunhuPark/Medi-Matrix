@@ -3,15 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import numpy as np
 import pandas as pd
 
 ML_ROOT = Path(__file__).resolve().parents[1]
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
+from challenge_metrics import prediction_utility
 from prepare_physionet2019 import convert_patient_file
-from targets import add_future_sepsis_target, prediction_rows
-from train_baseline import FEATURES, TARGET, patient_split
+from train_baseline import FEATURES, patient_split
 from train_xgboost import add_temporal_features, model_features
 
 
@@ -33,31 +34,31 @@ def test_physionet_columns_map_to_product_contract(tmp_path: Path):
     assert converted["label"].tolist() == [0, 1]
 
 
-def test_six_hour_target_uses_only_pre_onset_rows():
+def test_official_label_is_not_shifted_again():
     frame = pd.DataFrame(
         {
-            "patient_id": ["p1"] * 10 + ["p2"] * 4,
-            "hour": list(range(1, 11)) + list(range(1, 5)),
-            "hr": [80.0] * 14,
-            "bpSys": [120.0] * 14,
-            "bpDia": [75.0] * 14,
-            "resp": [16.0] * 14,
-            "temp": [36.5] * 14,
-            "spo2": [98.0] * 14,
-            "label": [0, 0, 0, 0, 0, 0, 0, 0, 1, 1] + [0, 0, 0, 0],
+            "patient_id": ["p1"] * 8,
+            "hour": list(range(1, 9)),
+            "hr": [80.0] * 8,
+            "bpSys": [120.0] * 8,
+            "bpDia": [75.0] * 8,
+            "resp": [16.0] * 8,
+            "temp": [36.5] * 8,
+            "spo2": [98.0] * 8,
+            "label": [0, 0, 0, 0, 0, 1, 1, 1],
         }
     )
 
-    targeted = add_future_sepsis_target(frame, horizon_hours=6)
-    p1 = targeted[targeted["patient_id"] == "p1"].reset_index(drop=True)
-    assert p1[TARGET].tolist()[:2] == [0.0, 0.0]
-    assert p1[TARGET].tolist()[2:8] == [1.0] * 6
-    assert pd.isna(p1[TARGET].iloc[8])
-    assert pd.isna(p1[TARGET].iloc[9])
+    # The training target is exactly PhysioNet's SepsisLabel. No derived target_6h is allowed.
+    assert "target_6h" not in frame.columns
+    assert frame["label"].tolist() == [0, 0, 0, 0, 0, 1, 1, 1]
 
-    p2 = targeted[targeted["patient_id"] == "p2"]
-    assert p2[TARGET].tolist() == [0.0, 0.0, 0.0, 0.0]
-    assert prediction_rows(targeted)[TARGET].isna().sum() == 0
+
+def test_official_challenge_utility_example_matches_reference():
+    labels = np.array([0, 0, 0, 0, 1, 1], dtype=int)
+    predictions = np.array([0, 0, 1, 1, 1, 1], dtype=int)
+    utility = prediction_utility(labels, predictions)
+    assert utility == pytest.approx(3.388888888888889)
 
 
 def test_patient_split_has_no_patient_leakage():
@@ -81,7 +82,7 @@ def test_patient_split_has_no_patient_leakage():
                 }
             )
 
-    frame = add_future_sepsis_target(pd.DataFrame(rows), horizon_hours=6)
+    frame = pd.DataFrame(rows)
     train, val, test, train_ids, val_ids, test_ids = patient_split(frame, seed=42)
 
     train_set = set(train_ids)
@@ -91,21 +92,17 @@ def test_patient_split_has_no_patient_leakage():
     assert train_set.isdisjoint(test_set)
     assert val_set.isdisjoint(test_set)
     assert train_set | val_set | test_set == set(frame["patient_id"].unique())
-
-    assert set(train["patient_id"]) == train_set
-    assert set(val["patient_id"]) == val_set
-    assert set(test["patient_id"]) == test_set
-    assert set(prediction_rows(train)[TARGET].unique()) == {0.0, 1.0}
-    assert set(prediction_rows(val)[TARGET].unique()) == {0.0, 1.0}
-    assert set(prediction_rows(test)[TARGET].unique()) == {0.0, 1.0}
+    assert set(train["label"].unique()) == {0, 1}
+    assert set(val["label"].unique()) == {0, 1}
+    assert set(test["label"].unique()) == {0, 1}
 
 
 def test_temporal_features_use_only_current_and_past_rows():
     frame = pd.DataFrame(
         [
-            {"patient_id": "p1", "hour": 1, "hr": 80, "bpSys": 120, "bpDia": 75, "resp": 16, "temp": 36.5, "spo2": 98, "label": 0, TARGET: 0.0},
-            {"patient_id": "p1", "hour": 2, "hr": 90, "bpSys": 115, "bpDia": 72, "resp": 18, "temp": 36.7, "spo2": 97, "label": 0, TARGET: 1.0},
-            {"patient_id": "p1", "hour": 3, "hr": 120, "bpSys": 90, "bpDia": 58, "resp": 26, "temp": 38.0, "spo2": 91, "label": 1, TARGET: float("nan")},
+            {"patient_id": "p1", "hour": 1, "hr": 80, "bpSys": 120, "bpDia": 75, "resp": 16, "temp": 36.5, "spo2": 98, "label": 0},
+            {"patient_id": "p1", "hour": 2, "hr": 90, "bpSys": 115, "bpDia": 72, "resp": 18, "temp": 36.7, "spo2": 97, "label": 0},
+            {"patient_id": "p1", "hour": 3, "hr": 120, "bpSys": 90, "bpDia": 58, "resp": 26, "temp": 38.0, "spo2": 91, "label": 1},
         ]
     )
     temporal = add_temporal_features(frame)
