@@ -4,6 +4,7 @@ import { Activity, Brain, Loader2, Play, Stethoscope, Upload, Wifi, WifiOff } fr
 import { Toaster, toast } from 'sonner'
 import { ThreeViewer } from './components/viewer/ThreeViewer'
 import { EmergencyDashboard } from './components/dashboard/EmergencyDashboard'
+import { VitalsAiRiskCard, type VitalsAiRisk } from './components/dashboard/VitalsAiRiskCard'
 import { AuthProvider, useAuth } from './auth/AuthProvider'
 import { ensureDemoSession, DemoSessionError } from './auth/demoSession'
 import {
@@ -75,6 +76,7 @@ function MainApp() {
     ards: string
     shock: string
   } | null>(null)
+  const [aiRisk, setAiRisk] = useState<VitalsAiRisk | null>(null)
   const [decision, setDecision] = useState<DecisionBreakdown | null>(null)
   const [, setTriggeringCondition] = useState<string | null>(null)
   const [, setSepsisHighRisk] = useState(false)
@@ -99,6 +101,7 @@ function MainApp() {
   const clearLiveContext = () => {
     setTriageLevel(null)
     setDiseaseRisks(null)
+    setAiRisk(null)
     setDecision(null)
     setTriggeringCondition(null)
     triggeringConditionRef.current = null
@@ -244,6 +247,7 @@ function MainApp() {
         })
       }
       if (data.disease_risks) setDiseaseRisks(data.disease_risks)
+      if (data.ai_risk) setAiRisk(data.ai_risk as VitalsAiRisk)
       if (data.decision) setDecision(data.decision)
       if (data.triggering_condition !== undefined) {
         triggeringConditionRef.current = data.triggering_condition
@@ -472,7 +476,7 @@ function MainApp() {
           <h1>Medi-Matrix</h1>
         </div>
         <div style={{ margin: '0 auto', color: '#fbbf24', fontSize: '0.85rem', fontWeight: 700 }}>
-          중증환자의 영상·Vitals를 전원 의사결정까지 연결하는 E2E 프로토타입 · 합성 데이터 데모
+          중증환자의 영상·Vitals를 전원 의사결정까지 연결하는 E2E 프로토타입 · 영상은 데모, Vitals AI는 응답 모드에 따라 구분
         </div>
         <div className="tabs">
           <button className={`tab ${modality === 'Brain' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Brain')}><Brain size={18} /> Brain</button>
@@ -489,7 +493,7 @@ function MainApp() {
               <div style={{ padding: 12, backgroundColor: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.22)', borderRadius: 10, marginBottom: 14, fontSize: '0.82rem' }}>
                 <strong style={{ color: '#60a5fa' }}>지역 응급실 → 상급병원 전원 지원</strong>
                 <div style={{ marginTop: 6, color: '#d1d5db', lineHeight: 1.5 }}>
-                  현재 공개 MVP에서는 PACS·EMR에서 들어올 입력을 의료영상 파일과 Vitals CSV 업로드로 재현합니다. 실제 병원 시스템 연동이 아니라 입력·Case 연결 흐름을 검증하는 합성 데이터 데모이며, 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.
+                  현재 공개 MVP에서는 PACS·EMR에서 들어올 입력을 의료영상 파일과 Vitals CSV 업로드로 재현합니다. 실제 병원 시스템 연동이 아니며, Vision은 합성/결정론적 데모입니다. Vitals는 서버가 반환하는 provenance를 기준으로 실제 GRU 모델과 deterministic demo scorer를 구분해 표시합니다. 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.
                 </div>
               </div>
             )}
@@ -592,11 +596,11 @@ function MainApp() {
                     <div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 6 }}>HR {Math.round(vitals.hr)} bpm · BP {Math.round(vitals.bpSys)}/{Math.round(vitals.bpDia)} mmHg</div>
                     <div style={{ color: '#fbbf24', fontSize: '0.98rem', marginTop: 2 }}>Resp {Math.round(vitals.resp)}/min · Temp {vitals.temp.toFixed(1)}°C · SpO2 {Math.round(vitals.spo2)}%</div>
                     {connectionStatus === 'reconnecting' && <div style={{ color: '#fbbf24', fontSize: '0.73rem', marginTop: 7 }}>재연결 중 · 마지막 정상 Vitals 값을 유지하고 있습니다.</div>}
-                    {diseaseRisks && (
+                    {aiRisk && <VitalsAiRiskCard risk={aiRisk} />}
+                    {!aiRisk && diseaseRisks && (
                       <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8, fontSize: '0.82rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sepsis-like</span><strong>{diseaseRisks.sepsis}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>ARDS-like</span><strong>{diseaseRisks.ards}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Shock-like</span><strong>{diseaseRisks.shock}</strong></div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sepsis-like demo score</span><strong>{diseaseRisks.sepsis}</strong></div>
+                        <div style={{ color: '#9ca3af', marginTop: 4, fontSize: '0.70rem' }}>이전 응답 호환 표시 · AI provenance 수신 후 AI Risk Probability로 대체됩니다.</div>
                       </div>
                     )}
                   </div>
@@ -612,7 +616,7 @@ function MainApp() {
                       </div>
                     ) : <div style={{ color: '#9ca3af', fontSize: '0.78rem', marginTop: 7 }}>Vitals 수신 후 점수 계산이 시작됩니다.</div>}
                     <div style={{ color: getTriageColor(triageLevel), fontWeight: 800, fontSize: '1.15rem', marginTop: 8 }}>{getTriageDisplayText(triageLevel)}</div>
-                    <div style={{ color: '#9ca3af', fontSize: '0.70rem', marginTop: 5 }}>현재 임계값은 제품 E2E 흐름 검증을 위한 데모 정책이며 임상 기준이 아닙니다.</div>
+                    <div style={{ color: '#9ca3af', fontSize: '0.70rem', marginTop: 5 }}>현재 Triage 임계값은 제품 E2E 흐름 검증을 위한 데모 정책이며 AI 모델 threshold 또는 임상 기준과 다릅니다.</div>
                     <button onClick={openLiveTriageDashboard} disabled={!isTriageActionable} style={{ marginTop: 10, width: '100%', padding: 9, borderRadius: 6, border: `1px solid ${getTriageColor(triageLevel)}`, backgroundColor: isTriageActionable ? `${getTriageColor(triageLevel)}22` : 'rgba(255,255,255,0.04)', color: isTriageActionable ? getTriageColor(triageLevel) : '#6b7280', cursor: isTriageActionable ? 'pointer' : 'not-allowed' }}>
                       <Activity size={17} style={{ verticalAlign: 'middle', marginRight: 6 }} />
                       {triageLevel?.includes('RED') ? 'RED · 긴급 전원 병원 탐색' : triageLevel?.includes('YELLOW') ? 'YELLOW · 전원 병원 후보 확인' : '응급도 계산 후 Golden-Time 탐색 가능'}
