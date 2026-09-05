@@ -48,6 +48,7 @@ _MAX_VITALS_UPLOAD_SIZE = 5 * 1024 * 1024
 _MAX_VITALS_ROWS = 1000
 _YELLOW_THRESHOLD = 0.25
 _RED_THRESHOLD = 0.75
+_PHYSIONET_SOURCE = "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0"
 
 
 class CaseResponse(BaseModel):
@@ -239,6 +240,50 @@ async def _authenticate_case_websocket(websocket: WebSocket) -> tuple[str, int, 
     return valid_uuid, exp, payload
 
 
+def _normalize_model_threshold(value) -> float | None:
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(threshold) or threshold <= 0.0 or threshold >= 1.0:
+        return None
+    return threshold
+
+
+def _build_ai_risk_payload(probs: dict, predictor, risk_probability: float) -> dict:
+    """Expose the Vitals signal and provenance separately from demo triage policy."""
+    inference_mode = str(
+        probs.get("inference_mode") or getattr(predictor, "mode", "demo")
+    ).strip().lower()
+    if inference_mode not in {"demo", "model"}:
+        inference_mode = "demo"
+
+    model_id = str(
+        probs.get("model_id")
+        or getattr(predictor, "model_id", "deterministic_vitals_demo_v1")
+    )
+    threshold = _normalize_model_threshold(
+        probs.get("model_threshold", getattr(predictor, "threshold", None))
+    )
+
+    if inference_mode == "model":
+        source = _PHYSIONET_SOURCE
+        target = "official SepsisLabel early-warning target"
+    else:
+        source = "Medi-Matrix deterministic Vitals demo scorer"
+        target = "synthetic sepsis-like pattern score"
+
+    return {
+        "risk_probability": round(risk_probability, 6),
+        "model_id": model_id,
+        "threshold": round(threshold, 6) if threshold is not None else None,
+        "source": source,
+        "inference_mode": inference_mode,
+        "target": target,
+        "clinical_use": False,
+    }
+
+
 def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict:
     """Build one explainable demo-policy Triage event from a Vitals row."""
     hr = float(row.get("hr", 0))
@@ -252,6 +297,7 @@ def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict
     final_sepsis = max(0.0, min(float(probs["sepsis"]), 0.99))
     final_ards = max(0.0, min(float(probs["ards"]), 0.99))
     final_shock = max(0.0, min(float(probs["shock"]), 0.99))
+    ai_risk = _build_ai_risk_payload(probs, predictor, final_sepsis)
 
     max_prob = max(final_sepsis, final_ards, final_shock)
     vision_context = min(volume / 200000.0, 0.12)
@@ -286,6 +332,7 @@ def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict
             "ards": f"{(final_ards * 100):.1f}%",
             "shock": f"{(final_shock * 100):.1f}%",
         },
+        "ai_risk": ai_risk,
         "triggering_condition": triggering_condition if triage_score >= _RED_THRESHOLD else None,
         "triage_level": triage_level,
         "sepsis_high_risk": bool(
@@ -294,7 +341,7 @@ def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict
             and final_sepsis >= 0.60
         ),
         "decision": {
-            "policy": "synthetic_demo_v1",
+            "policy": "transfer_demo_policy_v1",
             "clinical_rule": False,
             "vitals_risk": round(max_prob, 4),
             "vision_context": round(vision_context, 4),

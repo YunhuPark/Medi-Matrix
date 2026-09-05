@@ -25,11 +25,19 @@ backend/data/real_vitals.csv
 backend/data/uploads/
 backend/data/users/
 
-# Model checkpoints are external research artifacts. Do not commit new weights.
+# Model checkpoints are external research artifacts by default.
 *.pt
 *.pth
+# Exception: the small reviewed GRU deploy artifact is checksum-pinned and versioned.
+!backend/models/vitals_gru_challenge2019_v1/model.pt
 
 # Synthetic Demo Datasets
 backend/demo_datasets/generated/
 contest_artifacts/
 *.zip
+
+# Real-data ML pipeline: never commit downloaded patient-level source data or ad-hoc trained artifacts.
+ml/data/raw/
+ml/data/processed/
+ml/artifacts/
+*.joblib

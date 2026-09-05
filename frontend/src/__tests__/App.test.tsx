@@ -132,21 +132,23 @@ describe('App Component', () => {
     expect(screen.queryByText('Medi-Matrix 로그인')).not.toBeInTheDocument();
   });
 
-  it('심사위원용 원클릭 Demo Case 진입점을 기본 노출함', async () => {
+  it('직접 의료영상 + Vitals 업로드가 메인 시연 흐름으로 기본 노출됨', async () => {
     renderApp();
 
-    expect(await screen.findByTestId('demo-case-button')).toBeInTheDocument();
-    expect(screen.getByText('Demo Case 한 번에 실행')).toBeInTheDocument();
-    expect(screen.getByText(/지역 응급실 → 상급병원 전원 지원/i)).toBeInTheDocument();
-    expect(screen.getByText(/PACS·EMR 연동 전 단계/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('manual-upload-flow')).toBeInTheDocument();
+    expect(screen.getByText(/메인 시연 · 직접 Case 구성/i)).toBeInTheDocument();
+    expect(screen.getByTestId('image-upload-button')).toHaveTextContent('1. 의료영상 업로드 · Case 생성');
+    expect(screen.getByTestId('vitals-upload-button')).toHaveTextContent('2. Vitals CSV 업로드 · 같은 Case 연결');
+    expect(screen.getByTestId('monitoring-button')).toHaveTextContent('3. Case Vitals 모니터링 시작');
+    expect(screen.getByText(/PACS·EMR에서 들어올 입력을 의료영상 파일과 Vitals CSV 업로드로 재현/i)).toBeInTheDocument();
   });
 
-  it('직접 파일 업로드는 보조 MVP 입력 어댑터로 접혀 있음', async () => {
+  it('샘플 Case 원클릭은 백업 시연으로 분리됨', async () => {
     renderApp();
 
-    const summary = await screen.findByText(/직접 파일로 테스트/i);
-    expect(summary).toBeInTheDocument();
-    expect(screen.getByText(/MVP 입력 어댑터/i)).toBeInTheDocument();
+    expect(await screen.findByText(/백업 시연 · 샘플 Case 빠른 실행/i)).toBeInTheDocument();
+    expect(screen.getByTestId('demo-case-button')).toHaveTextContent('샘플 Case 빠른 실행');
+    expect(screen.queryByText('Demo Case 한 번에 실행')).not.toBeInTheDocument();
   });
 
   it('세션 초기화 버튼을 사용할 수 있음', async () => {
@@ -157,10 +159,11 @@ describe('App Component', () => {
     expect(await screen.findByText('Medi-Matrix')).toBeInTheDocument();
   });
 
-  it('demo 모드를 임상 AI 진단으로 표현하지 않음', async () => {
+  it('demo 모드를 실제 병원 연동이나 임상 AI 진단으로 표현하지 않음', async () => {
     renderApp();
 
-    expect(await screen.findByText(/임상 진단 또는 자동 전원 결정 시스템이 아닙니다/i)).toBeInTheDocument();
+    expect(await screen.findByText(/실제 병원 시스템 연동이 아니며/i)).toBeInTheDocument();
+    expect(screen.getByText(/임상 진단 또는 자동 전원 결정 시스템이 아닙니다/i)).toBeInTheDocument();
     expect(screen.queryByText(/Real-Data Ready/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/실제 환자 데이터 스트리밍/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/PyTorch Inference/i)).not.toBeInTheDocument();
