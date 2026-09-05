@@ -1,0 +1,113 @@
+name: Train Real Vitals Baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  train-real-vitals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ML dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ml/requirements.txt
+          python -m pip install awscli
+          python -m pip check
+
+      - name: Download official PhysioNet 2019 training sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW_DIR="$RUNNER_TEMP/physionet2019-training"
+          mkdir -p "$RAW_DIR"
+          aws s3 sync \
+            --no-sign-request \
+            --only-show-errors \
+            --exclude "*" \
+            --include "*.psv" \
+            s3://physionet-open/challenge-2019/1.0.0/training/ \
+            "$RAW_DIR/"
+          PATIENT_COUNT=$(find "$RAW_DIR" -type f -name '*.psv' | wc -l | tr -d ' ')
+          echo "patient_files=$PATIENT_COUNT"
+          test "$PATIENT_COUNT" -eq 40336
+          echo "RAW_DIR=$RAW_DIR" >> "$GITHUB_ENV"
+
+      - name: Convert real ICU records to Medi-Matrix six-Vitals schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ml/prepare_physionet2019.py \
+            --input "$RAW_DIR" \
+            --output "$RUNNER_TEMP/physionet2019_vitals.csv" | tee "$RUNNER_TEMP/prepare.log"
+
+      - name: Train official-label Logistic Regression baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$RUNNER_TEMP/vitals_logreg_challenge2019_v1"
+          python ml/train_baseline.py \
+            --data "$RUNNER_TEMP/physionet2019_vitals.csv" \
+            --artifact-dir "$ARTIFACT_DIR" | tee "$RUNNER_TEMP/train.log"
+          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> "$GITHUB_ENV"
+
+      - name: Save dataset provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATIENT_COUNT=$(find "$RAW_DIR" -type f -name '*.psv' | wc -l | tr -d ' ')
+          ROW_COUNT=$(($(wc -l < "$RUNNER_TEMP/physionet2019_vitals.csv") - 1))
+          cat > "$ARTIFACT_DIR/dataset_provenance.json" <<EOF
+          {
+            "source": "PhysioNet/Computing in Cardiology Challenge 2019 v1.0.0",
+            "official_url": "https://physionet.org/content/challenge-2019/1.0.0/",
+            "download_source": "s3://physionet-open/challenge-2019/1.0.0/training/",
+            "patient_files": $PATIENT_COUNT,
+            "hourly_rows": $ROW_COUNT,
+            "feature_contract": ["HR", "SBP", "DBP", "Resp", "Temp", "O2Sat"],
+            "target": "official SepsisLabel (already shifted six hours ahead by PhysioNet)",
+            "training_run_sha": "${GITHUB_SHA}"
+          }
+          EOF
+          cp "$RUNNER_TEMP/prepare.log" "$ARTIFACT_DIR/prepare.log"
+          cp "$RUNNER_TEMP/train.log" "$ARTIFACT_DIR/train.log"
+
+      - name: Publish metrics to job summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          m = json.loads((Path(os.environ['ARTIFACT_DIR']) / 'metrics.json').read_text())
+          t = m['test']
+          v = m['validation']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write('# PhysioNet 2019 official-label Logistic Regression\n\n')
+              f.write(f"- Train/Val/Test patients: {m['split']['train_patients']} / {m['split']['validation_patients']} / {m['split']['test_patients']}\n")
+              f.write(f"- Validation utility: **{v['challenge_utility']:.4f}**\n")
+              f.write(f"- Test utility: **{t['challenge_utility']:.4f}**\n")
+              f.write(f"- Test AUROC: {t['auroc']:.4f}\n")
+              f.write(f"- Test AUPRC: {t['auprc']:.4f}\n")
+              f.write(f"- Test sensitivity: {t['sensitivity']:.4f}\n")
+              f.write(f"- Test specificity: {t['specificity']:.4f}\n")
+          PY
+
+      - name: Upload trained baseline and evaluation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-vitals-logreg-official-label-${{ github.sha }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14

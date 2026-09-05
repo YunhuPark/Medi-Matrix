@@ -162,7 +162,7 @@ describe('App Component', () => {
   it('demo 모드를 실제 병원 연동이나 임상 AI 진단으로 표현하지 않음', async () => {
     renderApp();
 
-    expect(await screen.findByText(/실제 병원 시스템 연동이 아니라/i)).toBeInTheDocument();
+    expect(await screen.findByText(/실제 병원 시스템 연동이 아니며/i)).toBeInTheDocument();
     expect(screen.getByText(/임상 진단 또는 자동 전원 결정 시스템이 아닙니다/i)).toBeInTheDocument();
     expect(screen.queryByText(/Real-Data Ready/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/실제 환자 데이터 스트리밍/i)).not.toBeInTheDocument();

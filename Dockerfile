@@ -26,13 +26,14 @@ RUN pip install --no-cache-dir --upgrade pip
 # Install common dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Conditionally install ML dependencies
-ARG INSTALL_ML=false
+# The reviewed six-Vitals GRU is part of the competition runtime. Keep the
+# build arg override for development images that intentionally stay demo-only.
+ARG INSTALL_ML=true
 RUN if [ "$INSTALL_ML" = "true" ]; then \
         pip install --no-cache-dir -r requirements-ml.txt; \
     fi
 
-# Copy all application code
+# Copy all application code, including the checksum-pinned deploy artifact.
 COPY backend/ /app/backend/
 
 # Ensure start.sh is executable and owned by appuser

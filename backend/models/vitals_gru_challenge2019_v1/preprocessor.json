@@ -1,0 +1,57 @@
+{
+  "features": [
+    "hr",
+    "bpSys",
+    "bpDia",
+    "resp",
+    "temp",
+    "spo2"
+  ],
+  "medians": {
+    "hr": 83.0,
+    "bpSys": 121.0,
+    "bpDia": 62.0,
+    "resp": 18.0,
+    "temp": 37.0,
+    "spo2": 98.0
+  },
+  "means": {
+    "hr": 84.25717507350632,
+    "bpSys": 123.54617676877899,
+    "bpDia": 63.67410243093445,
+    "resp": 18.654508817535802,
+    "temp": 36.8825466936658,
+    "spo2": 97.17226014562218
+  },
+  "stds": {
+    "hr": 17.127185437546956,
+    "bpSys": 22.771392599467386,
+    "bpDia": 12.627940184208544,
+    "resp": 5.043238091495147,
+    "temp": 0.6901165736214234,
+    "spo2": 3.077424550550512
+  },
+  "hour_scale": 61.0,
+  "recency_cap_hours": 24.0,
+  "input_columns": [
+    "hr_value",
+    "hr_observed",
+    "hr_recency",
+    "bpSys_value",
+    "bpSys_observed",
+    "bpSys_recency",
+    "bpDia_value",
+    "bpDia_observed",
+    "bpDia_recency",
+    "resp_value",
+    "resp_observed",
+    "resp_recency",
+    "temp_value",
+    "temp_observed",
+    "temp_recency",
+    "spo2_value",
+    "spo2_observed",
+    "spo2_recency",
+    "hour_scaled"
+  ]
+}
