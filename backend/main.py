@@ -30,6 +30,15 @@ async def startup_event():
         except importlib.metadata.PackageNotFoundError:
             print(f"{pkg}=<not-installed>")
 
+    vitals_inference_mode = os.environ.get("VITALS_INFERENCE_MODE", "demo").strip().lower()
+    if vitals_inference_mode not in {"demo", "model"}:
+        raise RuntimeError("Invalid VITALS_INFERENCE_MODE at startup")
+    vitals_model_id = _verify_vitals_runtime(vitals_inference_mode)
+    print(
+        "Vitals runtime ready: "
+        f"mode={vitals_inference_mode} model_id={vitals_model_id} clinical_use=false"
+    )
+
 
 # Keep the production origin allow-list while permitting only this project's
 # Vercel Preview hostnames through a scoped regex.
