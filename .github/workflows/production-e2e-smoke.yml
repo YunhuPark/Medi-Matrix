@@ -62,6 +62,10 @@ jobs:
             try {
               await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
               const demoButton = page.getByTestId('demo-case-button');
+              const backupDetails = demoButton.locator('xpath=ancestor::details');
+              await backupDetails.evaluate((element) => {
+                element.open = true;
+              });
               await demoButton.waitFor({ state: 'visible', timeout: 60_000 });
               await demoButton.click();
 
