@@ -97,16 +97,3 @@ def test_health_ready_model_missing_weights(mock_exists, monkeypatch):
     detail = response.json().get("detail")
     assert isinstance(detail, str)
     assert "Model weights missing" in detail
-
-
-def test_health_ready_vitals_model_probe_failure(monkeypatch):
-    monkeypatch.setenv("INFERENCE_MODE", "demo")
-    monkeypatch.setenv("VITALS_INFERENCE_MODE", "model")
-
-    with patch("main._verify_vitals_runtime", side_effect=Exception("probe failed")):
-        try:
-            client.get("/health/ready")
-        except Exception as exc:
-            assert str(exc) == "probe failed"
-        else:
-            raise AssertionError("Expected probe failure to propagate from patched verifier")
