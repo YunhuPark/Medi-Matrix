@@ -153,6 +153,7 @@ export function EmergencyDashboard({
       }}>
         <button
           onClick={onClose}
+          aria-label="전원 의사결정 대시보드 닫기"
           style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
         >
           <X size={24} />
@@ -167,21 +168,22 @@ export function EmergencyDashboard({
           <div>
             <h1 style={{ margin: 0, color: liveStatusColor, fontSize: '2rem', transition: 'color 350ms ease' }}>{headerTitle}</h1>
             <p style={{ margin: '4px 0 0 0', color: '#fbbf24', fontSize: '0.9rem', fontWeight: 'bold' }}>
-              합성 데이터 분석 데모 | 임상 진단 아님 · 공모전 프로토타입
+              전원 의사결정 지원 프로토타입 · Vision은 합성/결정론적 데모 · Vitals AI는 서버 provenance 기준 · 임상 진단 아님
             </p>
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>합성 데이터 분석 리포트</h3>
+            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>Case Context & Triage</h3>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: '1.8' }}>
-              <li><strong>환자 ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
+              <li><strong>Demo Case ID:</strong> <span style={{ color: '#fff' }}>{patientId || 'Unknown'}</span></li>
               <li>
-                <strong>모달리티:</strong>{' '}
+                <strong>영상 Context:</strong>{' '}
                 <span style={{ color: '#60a5fa' }}>
                   {modality === 'Brain' ? '🧠 뇌 영상 (Brain MRI)' : '🫁 폐 영상 (Lung CT)'}
                 </span>
+                {' '}(합성/결정론적 Vision demo)
               </li>
               <li>
                 <strong>병변 체적 (Vision):</strong>{' '}
@@ -189,9 +191,9 @@ export function EmergencyDashboard({
                 {' '}(3D context)
               </li>
               <li>
-                <strong>Vitals 상태:</strong>{' '}
+                <strong>Vitals/Triage 상태:</strong>{' '}
                 <span style={{ color: liveStatusColor, fontWeight: 'bold', transition: 'color 350ms ease' }}>{liveVitalsStatus}</span>
-                {' '}(합성 데모)
+                {' '}(Case Vitals 스트림 + 비임상 demo policy)
               </li>
               <li>
                 <strong>현재 실시간 분류:</strong>{' '}
@@ -199,7 +201,7 @@ export function EmergencyDashboard({
               </li>
             </ul>
             <p style={{ margin: '1rem 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-              * 실시간 Vitals 스트리밍에 따라 현재 응급도와 병원 탐색 기준이 함께 갱신됩니다. 이 창은 사용자가 X를 누를 때까지 유지됩니다.
+              * Vitals AI의 실제 model/demo 구분과 모델 provenance는 메인 AI Risk 카드에 표시됩니다. 이 대시보드의 Triage와 자원 조건은 비임상 전원 지원 데모 정책입니다.
             </p>
           </div>
 
@@ -214,7 +216,7 @@ export function EmergencyDashboard({
                 }}>
                   <strong>{brainProtocol.heading}</strong><br />
                   {brainProtocol.body}<br />
-                  <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>공개 응급의료 정보 기반 추천 (임상 진단 아님)</span>
+                  <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>공개 응급의료 정보 기반 후보 탐색 · 임상 진단/자동 전원 결정 아님</span>
                 </div>
               ) : (
                 <div style={{
@@ -254,7 +256,7 @@ export function EmergencyDashboard({
                 >
                   <div style={{ color: '#bfdbfe', fontSize: '0.82rem', fontWeight: 800 }}>전원 후보 탐색 자원 조건</div>
                   <div style={{ marginTop: 5, color: '#9ca3af', fontSize: '0.72rem', lineHeight: 1.45 }}>
-                    현재 Case의 데모 Triage와 영상 Context에서 구조적으로 도출한 검색 필터입니다. 의료진 판단을 대체하지 않습니다.
+                    현재 Case의 비임상 Triage와 영상 Context에서 구조적으로 도출한 Golden-Time 검색 필터입니다. 의료진 판단을 대체하지 않습니다.
                   </div>
                   <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#dbeafe', fontSize: '0.76rem', lineHeight: 1.55 }}>
                     {requiredResources.map((resource) => (
