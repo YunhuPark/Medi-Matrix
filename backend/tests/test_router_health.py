@@ -16,9 +16,26 @@ def test_health_live():
 
 def test_health_ready_demo(monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "demo")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "demo")
     response = client.get("/health/ready")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "inference_mode": "demo"}
+    assert response.json() == {
+        "status": "ready",
+        "inference_mode": "demo",
+        "vitals_inference_mode": "demo",
+        "vitals_model_id": "deterministic_vitals_demo_v1",
+        "clinical_use": False,
+    }
+
+
+def test_health_ready_rejects_invalid_vitals_mode(monkeypatch):
+    monkeypatch.setenv("INFERENCE_MODE", "demo")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "invalid")
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Invalid VITALS_INFERENCE_MODE"
 
 
 def test_case_and_demo_routes_are_mounted():
@@ -34,6 +51,7 @@ def test_case_and_demo_routes_are_mounted():
 
 def test_health_ready_production_missing_vars(monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "demo")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "demo")
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ALLOWED_ORIGINS", "http://localhost")
     monkeypatch.delenv("SUPABASE_URL", raising=False)
@@ -45,6 +63,7 @@ def test_health_ready_production_missing_vars(monkeypatch):
 
 def test_health_ready_production_invalid_cors(monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "demo")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "demo")
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ALLOWED_ORIGINS", "*")
 
@@ -55,6 +74,7 @@ def test_health_ready_production_invalid_cors(monkeypatch):
 
 def test_health_ready_model_missing_dependencies(monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "model")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "demo")
     monkeypatch.setitem(sys.modules, "torch", None)
 
     response = client.get("/health/ready")
@@ -68,6 +88,7 @@ def test_health_ready_model_missing_dependencies(monkeypatch):
 @patch("os.path.exists")
 def test_health_ready_model_missing_weights(mock_exists, monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "model")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "demo")
     monkeypatch.setitem(sys.modules, "torch", MagicMock())
     mock_exists.return_value = False
 
@@ -76,3 +97,16 @@ def test_health_ready_model_missing_weights(mock_exists, monkeypatch):
     detail = response.json().get("detail")
     assert isinstance(detail, str)
     assert "Model weights missing" in detail
+
+
+def test_health_ready_vitals_model_probe_failure(monkeypatch):
+    monkeypatch.setenv("INFERENCE_MODE", "demo")
+    monkeypatch.setenv("VITALS_INFERENCE_MODE", "model")
+
+    with patch("main._verify_vitals_runtime", side_effect=Exception("probe failed")):
+        try:
+            client.get("/health/ready")
+        except Exception as exc:
+            assert str(exc) == "probe failed"
+        else:
+            raise AssertionError("Expected probe failure to propagate from patched verifier")
