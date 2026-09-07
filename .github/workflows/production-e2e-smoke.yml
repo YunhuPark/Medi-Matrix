@@ -86,7 +86,7 @@ jobs:
               throw new Error(`Expected ai_risk.inference_mode=model, got ${aiRiskFrame.inference_mode}`);
             }
             if (aiRiskFrame.model_id !== expectedModelId) {
-              throw new Error(`Expected ai_risk.model_id=${expectedModelId, got ${aiRiskFrame.model_id}`);
+              throw new Error(`Expected ai_risk.model_id=${expectedModelId}, got ${aiRiskFrame.model_id}`);
             }
             if (aiRiskFrame.clinical_use !== false) {
               throw new Error(`Expected ai_risk.clinical_use=false, got ${aiRiskFrame.clinical_use}`);
