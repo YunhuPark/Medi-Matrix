@@ -1,5 +1,6 @@
 import { AlertTriangle, MapPin, X, ShieldAlert } from 'lucide-react';
 import { buildGoldenTimeUrl } from '../../lib/goldenTimeUrl';
+import { buildTransferRequirements } from '../../lib/transferSupport';
 
 interface EmergencyDashboardProps {
   onClose: () => void;
@@ -22,6 +23,7 @@ export function EmergencyDashboard({
   const isRed = normalizedTriage.startsWith('RED');
   const isYellow = normalizedTriage.startsWith('YELLOW');
   const isGreen = normalizedTriage.startsWith('GREEN');
+  const requiredResources = buildTransferRequirements(triageLevel, modality);
 
   // 모달은 사용자가 X를 누를 때까지 유지하되, 실시간 스트리밍의 현재 Triage에 맞춰
   // 제목/테두리/상태 패널만 부드럽게 갱신합니다. pulse 같은 반복 애니메이션은 사용하지 않아
@@ -239,6 +241,28 @@ export function EmergencyDashboard({
                   <h2 style={{ margin: 0, color: escalationPanel.titleColor, fontSize: '1.1rem' }}>{escalationPanel.title}</h2>
                 </div>
               </div>
+
+              {(isRed || isYellow) && requiredResources.length > 0 && (
+                <div
+                  data-testid="transfer-resource-requirements"
+                  style={{
+                    padding: '0.9rem',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(147,197,253,0.28)',
+                    backgroundColor: 'rgba(59,130,246,0.08)',
+                  }}
+                >
+                  <div style={{ color: '#bfdbfe', fontSize: '0.82rem', fontWeight: 800 }}>전원 후보 탐색 자원 조건</div>
+                  <div style={{ marginTop: 5, color: '#9ca3af', fontSize: '0.72rem', lineHeight: 1.45 }}>
+                    현재 Case의 데모 Triage와 영상 Context에서 구조적으로 도출한 검색 필터입니다. 의료진 판단을 대체하지 않습니다.
+                  </div>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#dbeafe', fontSize: '0.76rem', lineHeight: 1.55 }}>
+                    {requiredResources.map((resource) => (
+                      <li key={`${resource.kind}:${resource.id}`}>{resource.label}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <button
                 onClick={handleGoldenTimeRedirect}
