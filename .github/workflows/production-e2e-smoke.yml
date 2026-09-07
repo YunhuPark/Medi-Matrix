@@ -1,0 +1,116 @@
+name: Production E2E Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/production-e2e-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  production-e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify production Case -> WebSocket -> AI Risk card
+        env:
+          E2E_URL: https://medi-matrix.vercel.app
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+
+          async function main() {
+            const expectedModelId = 'vitals_gru_challenge2019_v1';
+            const baseUrl = process.env.E2E_URL;
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+
+            let aiRiskFrame = null;
+            const browserErrors = [];
+
+            page.on('pageerror', (error) => browserErrors.push(`pageerror: ${error.message}`));
+            page.on('console', (message) => {
+              if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
+            });
+            page.on('websocket', (socket) => {
+              socket.on('framereceived', ({ payload }) => {
+                if (typeof payload !== 'string') return;
+                try {
+                  const data = JSON.parse(payload);
+                  if (data && data.ai_risk) aiRiskFrame = data.ai_risk;
+                } catch {
+                  // Ignore non-JSON WebSocket frames.
+                }
+              });
+            });
+
+            try {
+              await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+              const demoButton = page.getByTestId('demo-case-button');
+              const backupDetails = demoButton.locator('xpath=ancestor::details');
+              await backupDetails.evaluate((element) => {
+                element.open = true;
+              });
+              await demoButton.waitFor({ state: 'visible', timeout: 60_000 });
+              await demoButton.click();
+
+              const riskPanel = page.getByTestId('ai-risk-panel');
+              await riskPanel.waitFor({ state: 'visible', timeout: 120_000 });
+
+              const panelText = await riskPanel.innerText();
+              if (!panelText.includes('Causal GRU')) {
+                throw new Error(`AI Risk panel did not show Causal GRU provenance. Text: ${panelText}`);
+              }
+              if (!panelText.includes(expectedModelId)) {
+                throw new Error(`AI Risk panel did not show model_id=${expectedModelId}. Text: ${panelText}`);
+              }
+
+              const deadline = Date.now() + 30_000;
+              while (!aiRiskFrame && Date.now() < deadline) {
+                await page.waitForTimeout(500);
+              }
+              if (!aiRiskFrame) {
+                throw new Error('No WebSocket frame with ai_risk provenance was observed.');
+              }
+              if (aiRiskFrame.inference_mode !== 'model') {
+                throw new Error(`Expected ai_risk.inference_mode=model, got ${aiRiskFrame.inference_mode}`);
+              }
+              if (aiRiskFrame.model_id !== expectedModelId) {
+                throw new Error(`Expected ai_risk.model_id=${expectedModelId}, got ${aiRiskFrame.model_id}`);
+              }
+              if (aiRiskFrame.clinical_use !== false) {
+                throw new Error(`Expected ai_risk.clinical_use=false, got ${aiRiskFrame.clinical_use}`);
+              }
+
+              console.log('E2E_PASS');
+              console.log(`ai_risk.inference_mode=${aiRiskFrame.inference_mode}`);
+              console.log(`ai_risk.model_id=${aiRiskFrame.model_id}`);
+              console.log(`ai_risk.clinical_use=${aiRiskFrame.clinical_use}`);
+              if (browserErrors.length) {
+                console.log(`Non-fatal browser errors observed: ${browserErrors.join(' | ')}`);
+              }
+            } finally {
+              await browser.close();
+            }
+          }
+
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
