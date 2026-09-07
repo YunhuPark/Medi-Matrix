@@ -132,7 +132,7 @@ jobs:
               if (!resourcePanelText.includes('전원 후보 탐색 자원 조건')) {
                 throw new Error(`Transfer resource panel was not rendered. Text: ${resourcePanelText}`);
               }
-              if (!resourcePanelText.includes('ICU') || !resourcePanelText.includes('뇌 영상')) {
+              if (!resourcePanelText.includes('ICU') || !resourcePanelText.includes('CT/MRI')) {
                 throw new Error(`Transfer resource panel missed core Brain transfer resources. Text: ${resourcePanelText}`);
               }
 
