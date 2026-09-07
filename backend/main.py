@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import math
 import os
 import uvicorn
 from dotenv import load_dotenv
@@ -62,13 +63,53 @@ def health_live():
     return JSONResponse(content={"status": "alive"})
 
 
+def _verify_vitals_runtime(vitals_inference_mode: str) -> str:
+    """Load and execute one fixed nonclinical probe when Vitals model mode is enabled."""
+    if vitals_inference_mode == "demo":
+        return "deterministic_vitals_demo_v1"
+
+    try:
+        from api.mamba_inference import MambaSystemicPredictor
+
+        predictor = MambaSystemicPredictor()
+        probe = predictor.predict(
+            [
+                {
+                    "hr": 80.0,
+                    "bpSys": 120.0,
+                    "bpDia": 75.0,
+                    "resp": 16.0,
+                    "temp": 36.8,
+                    "spo2": 98.0,
+                }
+            ]
+        )
+        probability = float(probe["sepsis"])
+        if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+            raise RuntimeError("Vitals probe returned an invalid probability.")
+        if probe.get("inference_mode") != "model":
+            raise RuntimeError("Vitals probe did not execute in model mode.")
+        model_id = str(probe.get("model_id") or predictor.model_id).strip()
+        if not model_id:
+            raise RuntimeError("Vitals probe did not expose a model ID.")
+        return model_id
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Vitals model runtime unavailable",
+        ) from exc
+
+
 @app.get("/health/ready")
 def health_ready():
     app_env = os.environ.get("APP_ENV", "development")
-    inference_mode = os.environ.get("INFERENCE_MODE", "demo")
+    inference_mode = os.environ.get("INFERENCE_MODE", "demo").strip().lower()
+    vitals_inference_mode = os.environ.get("VITALS_INFERENCE_MODE", "demo").strip().lower()
 
     if inference_mode not in ["demo", "model"]:
         raise HTTPException(status_code=503, detail="Invalid INFERENCE_MODE")
+    if vitals_inference_mode not in ["demo", "model"]:
+        raise HTTPException(status_code=503, detail="Invalid VITALS_INFERENCE_MODE")
 
     if app_env == "production":
         configured_origins = _build_cors_origins()
@@ -112,7 +153,17 @@ def health_ready():
             if not os.path.exists(path):
                 raise HTTPException(status_code=503, detail="Model weights missing")
 
-    return JSONResponse(content={"status": "ready", "inference_mode": inference_mode})
+    vitals_model_id = _verify_vitals_runtime(vitals_inference_mode)
+
+    return JSONResponse(
+        content={
+            "status": "ready",
+            "inference_mode": inference_mode,
+            "vitals_inference_mode": vitals_inference_mode,
+            "vitals_model_id": vitals_model_id,
+            "clinical_use": False,
+        }
+    )
 
 
 if __name__ == "__main__":
