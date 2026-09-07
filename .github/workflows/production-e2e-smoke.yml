@@ -27,7 +27,7 @@ jobs:
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
 
-      - name: Verify production Case -> WebSocket -> AI Risk card
+      - name: Verify production Case -> WebSocket -> AI Risk -> Transfer Brief
         env:
           E2E_URL: https://medi-matrix.vercel.app
         run: |
@@ -80,6 +80,22 @@ jobs:
                 throw new Error(`AI Risk panel did not show model_id=${expectedModelId}. Text: ${panelText}`);
               }
 
+              const transferBrief = page.getByTestId('ai-transfer-brief');
+              await transferBrief.waitFor({ state: 'visible', timeout: 30_000 });
+              const transferBriefText = await transferBrief.innerText();
+              if (!transferBriefText.includes('AI Transfer Brief · Grounded Vitals evidence')) {
+                throw new Error(`Transfer Brief did not show grounded model evidence. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes(expectedModelId)) {
+                throw new Error(`Transfer Brief did not include model_id=${expectedModelId}. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes('clinical_use=false')) {
+                throw new Error(`Transfer Brief did not preserve clinical_use=false. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes('Validation threshold')) {
+                throw new Error(`Transfer Brief did not expose validation threshold evidence. Text: ${transferBriefText}`);
+              }
+
               const deadline = Date.now() + 30_000;
               while (!aiRiskFrame && Date.now() < deadline) {
                 await page.waitForTimeout(500);
@@ -101,6 +117,7 @@ jobs:
               console.log(`ai_risk.inference_mode=${aiRiskFrame.inference_mode}`);
               console.log(`ai_risk.model_id=${aiRiskFrame.model_id}`);
               console.log(`ai_risk.clinical_use=${aiRiskFrame.clinical_use}`);
+              console.log('ai_transfer_brief=grounded_model_evidence');
               if (browserErrors.length) {
                 console.log(`Non-fatal browser errors observed: ${browserErrors.join(' | ')}`);
               }
