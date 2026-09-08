@@ -353,7 +353,7 @@ def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict
 
 @case_router.websocket("/cases/{case_id}/triage/stream")
 async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
-    """Replay one Vitals episode and then keep its final triage state stable."""
+    """Replay one Vitals episode once, then hold its final triage state."""
     await websocket.accept()
     try:
         try:
@@ -429,11 +429,22 @@ async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
             await websocket.send_json(response_payload)
 
         if final_payload is not None:
-            completed_payload = dict(final_payload)
-            completed_payload["status"] = "completed"
-            completed_payload["replay_complete"] = True
-            completed_payload["message"] = "Vitals demo episode completed; final triage state is retained."
-            await websocket.send_json(completed_payload)
+            held_payload = dict(final_payload)
+            held_payload["status"] = "holding"
+            held_payload["replay_complete"] = True
+            held_payload["message"] = "Vitals demo episode completed; final triage state is retained without replaying the episode."
+            await websocket.send_json(held_payload)
+
+        # Keep the connection open so the existing client does not treat a normal
+        # server close as a transient failure and automatically replay the same
+        # deterioration episode again. The client can still stop/reset explicitly.
+        while time.time() < exp:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                continue
+            except WebSocketDisconnect:
+                return
 
         await websocket.close(code=1000)
 
