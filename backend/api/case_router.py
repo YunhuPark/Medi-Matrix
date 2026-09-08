@@ -16,7 +16,6 @@ import math
 import os
 import time
 import uuid
-from itertools import cycle
 
 import httpx
 from fastapi import (
@@ -354,7 +353,7 @@ def _build_triage_payload(row: dict[str, str], volume: float, predictor) -> dict
 
 @case_router.websocket("/cases/{case_id}/triage/stream")
 async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
-    """Replay the Vitals attached to one Case and stream explainable demo Triage."""
+    """Replay one Vitals episode and then keep its final triage state stable."""
     await websocket.accept()
     try:
         try:
@@ -413,7 +412,8 @@ async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
             await websocket.close(code=1008)
             return
 
-        for row in cycle(replay_rows):
+        final_payload: dict | None = None
+        for row in replay_rows:
             await asyncio.sleep(1.0)
             if time.time() >= exp:
                 await websocket.close(code=4401)
@@ -425,7 +425,17 @@ async def case_triage_websocket_stream(websocket: WebSocket, case_id: str):
                 continue
 
             response_payload["case_id"] = valid_case_id
+            final_payload = response_payload
             await websocket.send_json(response_payload)
+
+        if final_payload is not None:
+            completed_payload = dict(final_payload)
+            completed_payload["status"] = "completed"
+            completed_payload["replay_complete"] = True
+            completed_payload["message"] = "Vitals demo episode completed; final triage state is retained."
+            await websocket.send_json(completed_payload)
+
+        await websocket.close(code=1000)
 
     except WebSocketDisconnect:
         pass
