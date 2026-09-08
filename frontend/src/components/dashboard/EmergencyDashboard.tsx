@@ -84,12 +84,12 @@ export function EmergencyDashboard({
   const brainProtocol = isRed
     ? {
         heading: '🧠 뇌 병변 + 전신악화 대응 병원 탐색',
-        body: 'RED에서는 ARDS-like·Sepsis-like·Shock-like 중 무엇이 높든 동일하게 응급실·ICU·뇌 영상·수술 자원을 확인합니다.',
+        body: 'RED에서는 응급실·ICU·뇌 CT/MRI·응급의학과·내과·신경외과·신경과 대응 여부를 확인합니다.',
       }
     : isYellow
       ? {
           heading: '🧠 뇌 병변 대응 병원 후보 사전 확인',
-          body: 'YELLOW에서는 상태 악화에 대비해 CT/MRI·수술 가능 자원을 갖춘 병원 후보를 미리 확인합니다.',
+          body: 'YELLOW에서는 상태 악화에 대비해 ICU·뇌 CT/MRI·신경외과·신경과 대응 여부를 갖춘 병원 후보를 미리 확인합니다.',
         }
       : {
           heading: '🧠 현재 상태 모니터링',
@@ -206,7 +206,7 @@ export function EmergencyDashboard({
           </div>
 
           <div style={{ backgroundColor: '#2a2a35', padding: '1.5rem', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>환자 이송 프로토콜</h3>
+            <h3 style={{ margin: '0 0 1rem 0', color: '#9ca3af' }}>전원 후보 탐색 가이드</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {modality === 'Brain' ? (
@@ -225,9 +225,8 @@ export function EmergencyDashboard({
                 }}>
                   <strong>⚠️ {modality} 모드 특화 추천 미지원</strong><br />
                   {isRed
-                    ? 'RED에서는 응급실·ICU 등 전신악화 대응 자원을 우선 확인합니다.'
-                    : '현재 응급도에 맞는 공개 응급의료 가용자원을 기준으로 탐색합니다.'}<br />
-                  공개 응급의료 가용자원을 기준으로 탐색합니다.
+                    ? 'RED에서는 응급실·ICU·응급의학과·내과 등 전신악화 대응 자원을 우선 확인합니다.'
+                    : '현재 응급도에 맞는 공개 응급의료 가용자원을 기준으로 탐색합니다.'}
                 </div>
               )}
 
