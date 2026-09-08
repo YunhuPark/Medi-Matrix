@@ -1,0 +1,206 @@
+name: Final Production Submission Capture
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/final-submission-capture.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  capture-submission-screens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Capture verified production submission screens
+        env:
+          E2E_URL: https://medi-matrix.vercel.app
+          GOLDEN_TIME_URL: https://golden-time.vercel.app
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { chromium } = require('playwright');
+
+          async function main() {
+            const outputDir = path.resolve('submission-captures');
+            fs.mkdirSync(outputDir, { recursive: true });
+
+            const expectedModelId = 'vitals_gru_challenge2019_v1';
+            const expectedResourceContract = 'transfer_resources_v1';
+            const baseUrl = process.env.E2E_URL;
+            const goldenTimeBaseUrl = process.env.GOLDEN_TIME_URL;
+
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              viewport: { width: 1600, height: 900 },
+              deviceScaleFactor: 1,
+              geolocation: { latitude: 37.5665, longitude: 126.9780 },
+              permissions: ['geolocation'],
+            });
+            const page = await context.newPage();
+
+            let aiRiskFrame = null;
+            page.on('websocket', (socket) => {
+              socket.on('framereceived', ({ payload }) => {
+                if (typeof payload !== 'string') return;
+                try {
+                  const data = JSON.parse(payload);
+                  if (data && data.ai_risk) aiRiskFrame = data.ai_risk;
+                } catch {
+                  // Ignore non-JSON WebSocket frames.
+                }
+              });
+            });
+
+            try {
+              await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+              const demoButton = page.getByTestId('demo-case-button');
+              const backupDetails = demoButton.locator('xpath=ancestor::details');
+              await backupDetails.evaluate((element) => { element.open = true; });
+              await demoButton.waitFor({ state: 'visible', timeout: 60_000 });
+              await demoButton.click();
+
+              const riskPanel = page.getByTestId('ai-risk-panel');
+              await riskPanel.waitFor({ state: 'visible', timeout: 120_000 });
+              const panelText = await riskPanel.innerText();
+              if (!panelText.includes('Causal GRU') || !panelText.includes(expectedModelId)) {
+                throw new Error(`AI Risk provenance mismatch: ${panelText}`);
+              }
+
+              const transferBrief = page.getByTestId('ai-transfer-brief');
+              await transferBrief.waitFor({ state: 'visible', timeout: 30_000 });
+              const transferBriefText = await transferBrief.innerText();
+              if (!transferBriefText.includes('AI Transfer Brief · Grounded Vitals evidence')) {
+                throw new Error(`Transfer Brief evidence mismatch: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes('clinical_use=false') || !transferBriefText.includes('Validation threshold')) {
+                throw new Error(`Transfer Brief provenance incomplete: ${transferBriefText}`);
+              }
+
+              const deadline = Date.now() + 30_000;
+              while (!aiRiskFrame && Date.now() < deadline) await page.waitForTimeout(500);
+              if (!aiRiskFrame) throw new Error('No ai_risk WebSocket provenance observed.');
+              if (aiRiskFrame.inference_mode !== 'model' || aiRiskFrame.model_id !== expectedModelId || aiRiskFrame.clinical_use !== false) {
+                throw new Error(`Unexpected ai_risk provenance: ${JSON.stringify(aiRiskFrame)}`);
+              }
+
+              // 1) Overall Case flow after the real model-backed Vitals card is visible.
+              await page.screenshot({ path: path.join(outputDir, '01-case-overview.png'), fullPage: true });
+
+              // 2) Vision 3D context. Wait for the loaded-mesh provenance overlay before capture.
+              await page.getByText('합성/휴리스틱 마스크를 변환한 3D 메쉬', { exact: false }).waitFor({
+                state: 'visible',
+                timeout: 120_000,
+              });
+              const canvas = page.locator('canvas').first();
+              await canvas.waitFor({ state: 'visible', timeout: 30_000 });
+              await canvas.locator('xpath=..').screenshot({ path: path.join(outputDir, '02-vision-3d-context.png') });
+
+              // 3) Actual Vitals AI evidence card.
+              await riskPanel.screenshot({ path: path.join(outputDir, '03-vitals-ai-risk.png') });
+
+              // Open the actionable transfer dashboard.
+              const triageSearchButton = page.getByRole('button', {
+                name: /RED · 긴급 전원 병원 탐색|YELLOW · 전원 병원 후보 확인/,
+              });
+              await triageSearchButton.waitFor({ state: 'visible', timeout: 120_000 });
+              await triageSearchButton.click();
+
+              const resourcePanel = page.getByTestId('transfer-resource-requirements');
+              await resourcePanel.waitFor({ state: 'visible', timeout: 30_000 });
+              const resourceText = await resourcePanel.innerText();
+              if (!resourceText.includes('전원 후보 탐색 자원 조건') || !resourceText.includes('ICU') || !resourceText.includes('CT/MRI')) {
+                throw new Error(`Transfer resource panel mismatch: ${resourceText}`);
+              }
+              await page.getByText('전원 후보 탐색 가이드', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+
+              // 4) Transfer Brief + resource conditions + final submission wording.
+              await page.screenshot({ path: path.join(outputDir, '04-transfer-brief-resources.png'), fullPage: true });
+
+              const goldenTimeButton = page.getByRole('button', {
+                name: /RED · 긴급 이송 병원 탐색|YELLOW · 대응 병원 후보 확인/,
+              });
+              await goldenTimeButton.waitFor({ state: 'visible', timeout: 30_000 });
+
+              const popupPromise = page.waitForEvent('popup', { timeout: 30_000 });
+              await goldenTimeButton.click();
+              const goldenPage = await popupPromise;
+              await goldenPage.waitForURL((url) => url.hostname.includes('golden-time'), { timeout: 30_000 });
+              const handoffUrl = new URL(goldenPage.url());
+
+              if (handoffUrl.origin !== new URL(goldenTimeBaseUrl).origin) throw new Error('Golden-Time origin mismatch.');
+              if (handoffUrl.searchParams.get('resourceContract') !== expectedResourceContract) throw new Error('Missing resource contract.');
+              if (handoffUrl.searchParams.get('analysisMode') !== 'synthetic_demo') throw new Error('analysisMode mismatch.');
+              if (handoffUrl.searchParams.get('clinicalValidation') !== 'false') throw new Error('clinicalValidation mismatch.');
+
+              const triage = handoffUrl.searchParams.get('triage');
+              if (!['RED', 'YELLOW'].includes(triage)) throw new Error(`Unexpected triage: ${triage}`);
+
+              const capabilities = new Set((handoffUrl.searchParams.get('capabilities') || '').split(',').filter(Boolean));
+              const specialties = new Set((handoffUrl.searchParams.get('specialties') || '').split(',').filter(Boolean));
+              for (const id of ['icu', 'brain_imaging']) if (!capabilities.has(id)) throw new Error(`Missing capability=${id}`);
+              for (const id of ['neurosurgery', 'neurology']) if (!specialties.has(id)) throw new Error(`Missing specialty=${id}`);
+
+              const serializedHandoff = handoffUrl.toString();
+              for (const pattern of [/access_token/i, /authorization/i, /patient_?id/i, /mesh_?id/i, /signed_url/i, /X-Amz-Signature/i]) {
+                if (pattern.test(serializedHandoff)) throw new Error(`Sensitive pattern in handoff: ${pattern}`);
+              }
+
+              await goldenPage.setViewportSize({ width: 1600, height: 900 });
+              await goldenPage.getByRole('heading', { name: /Golden Time/ }).waitFor({ state: 'visible', timeout: 120_000 });
+              const expectedModeText = triage === 'RED' ? '초응급(RED) 환자 이송 모드' : '응급(YELLOW) 환자 집중 관찰';
+              await goldenPage.getByText(expectedModeText, { exact: false }).waitFor({ state: 'visible', timeout: 120_000 });
+
+              // 5) Golden-Time receiving UI after the real resource-contract handoff.
+              await goldenPage.screenshot({ path: path.join(outputDir, '05-golden-time-handoff.png'), fullPage: true });
+
+              fs.writeFileSync(path.join(outputDir, 'capture-manifest.txt'), [
+                'FINAL_SUBMISSION_CAPTURE_PASS',
+                `medi_matrix=${baseUrl}`,
+                `ai_risk.inference_mode=${aiRiskFrame.inference_mode}`,
+                `ai_risk.model_id=${aiRiskFrame.model_id}`,
+                `ai_risk.clinical_use=${aiRiskFrame.clinical_use}`,
+                `golden_time.resourceContract=${handoffUrl.searchParams.get('resourceContract')}`,
+                `golden_time.triage=${triage}`,
+                `golden_time.capabilities=${Array.from(capabilities).join(',')}`,
+                `golden_time.specialties=${Array.from(specialties).join(',')}`,
+              ].join('\n') + '\n');
+
+              console.log('FINAL_SUBMISSION_CAPTURE_PASS');
+              console.log(`golden_time.triage=${triage}`);
+            } finally {
+              await context.close();
+              await browser.close();
+            }
+          }
+
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Upload submission captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-production-submission-captures
+          path: submission-captures/
+          if-no-files-found: error
+          retention-days: 14
