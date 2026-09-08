@@ -476,7 +476,7 @@ function MainApp() {
           <h1>Medi-Matrix</h1>
         </div>
         <div style={{ margin: '0 auto', color: '#fbbf24', fontSize: '0.85rem', fontWeight: 700 }}>
-          중증환자의 영상·Vitals를 전원 의사결정까지 연결하는 E2E 프로토타입 · 영상은 데모, Vitals AI는 응답 모드에 따라 구분
+          영상 + Vitals → AI Risk → 필요한 의료자원 → 전원 병원 탐색
         </div>
         <div className="tabs">
           <button className={`tab ${modality === 'Brain' ? 'active' : ''}`} onClick={() => appStatus !== 'PROCESSING' && setModality('Brain')}><Brain size={18} /> Brain</button>
@@ -488,96 +488,118 @@ function MainApp() {
       <main className="main-content">
         <aside className="sidebar">
           <div className="control-group">
-            <h3>Transfer Support Demo</h3>
-            {isDemoMode && (
-              <div style={{ padding: 12, backgroundColor: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.22)', borderRadius: 10, marginBottom: 14, fontSize: '0.82rem' }}>
-                <strong style={{ color: '#60a5fa' }}>지역 응급실 → 상급병원 전원 지원</strong>
-                <div style={{ marginTop: 6, color: '#d1d5db', lineHeight: 1.5 }}>
-                  현재 공개 MVP에서는 PACS·EMR에서 들어올 입력을 의료영상 파일과 Vitals CSV 업로드로 재현합니다. 실제 병원 시스템 연동이 아니며, Vision은 합성/결정론적 데모입니다. Vitals는 서버가 반환하는 provenance를 기준으로 실제 GRU 모델과 deterministic demo scorer를 구분해 표시합니다. 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.
-                </div>
-              </div>
-            )}
+            <h3>Transfer Support</h3>
 
-            <div
-              data-testid="manual-upload-flow"
+            <details
+              open
+              data-testid="quick-demo-flow"
               style={{
-                padding: 12,
-                borderRadius: 10,
-                border: '1px solid rgba(74,222,128,0.28)',
-                backgroundColor: 'rgba(74,222,128,0.06)',
                 marginBottom: 12,
+                padding: 14,
+                borderRadius: 14,
+                border: '1px solid rgba(34,211,238,0.30)',
+                background: 'linear-gradient(145deg, rgba(8,145,178,0.12), rgba(59,130,246,0.06))',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
               }}
             >
-              <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '0.82rem', marginBottom: 6 }}>메인 시연 · 직접 Case 구성</div>
-              <div style={{ color: '#d1d5db', fontSize: '0.75rem', lineHeight: 1.5, marginBottom: 10 }}>
-                영상과 Vitals를 각각 입력해 하나의 Case로 묶고, 그 Case의 시계열을 이용해 Triage와 전원 병원 탐색까지 진행합니다.
+              <summary style={{ display: 'none' }}>샘플 Case 빠른 실행</summary>
+              <div style={{ color: '#67e8f9', fontSize: '0.90rem', fontWeight: 800 }}>샘플 중증환자 Case</div>
+              <div style={{ marginTop: 5, color: '#d1d5db', fontSize: '0.74rem', lineHeight: 1.45 }}>
+                한 번의 실행으로 Brain Context와 Vitals Replay를 연결해 AI Risk부터 전원 병원 탐색까지 확인합니다.
               </div>
-
-              <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".npy,.nii,.nii.gz" onChange={handleFileUpload} />
-              <button
-                data-testid="image-upload-button"
-                className="btn primary"
-                style={{ width: '100%', marginBottom: 6 }}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadMutation.isPending || monitoringEnabled}
-              >
-                <Upload size={18} /> 1. 의료영상 업로드 · Case 생성
-              </button>
-              <div style={{ color: '#9ca3af', fontSize: '0.68rem', marginBottom: 10 }}>.npy / .nii / .nii.gz · 공개 데모 입력 어댑터</div>
-
-              {caseId && (
-                <div style={{ padding: '9px 10px', backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 8, marginBottom: 10, fontSize: '0.78rem' }}>
-                  <strong style={{ color: '#fff' }}>Case ID</strong>
-                  <div style={{ color: '#60a5fa', fontFamily: 'monospace', marginTop: 3 }}>{caseId}</div>
-                  <div style={{ color: '#9ca3af', marginTop: 3 }}>비식별 Demo Encounter ID · 병원 MRN이 아닙니다.</div>
-                </div>
-              )}
-
-              <input type="file" ref={csvInputRef} onChange={handleCsvUpload} accept=".csv" style={{ display: 'none' }} />
-              <button
-                data-testid="vitals-upload-button"
-                className="btn primary"
-                style={{ width: '100%', marginBottom: 6 }}
-                onClick={() => csvInputRef.current?.click()}
-                disabled={!caseId || appStatus === 'PROCESSING' || monitoringEnabled}
-              >
-                <Upload size={18} /> {hasVitalsFile ? '2. Vitals CSV 연결 완료' : '2. Vitals CSV 업로드 · 같은 Case 연결'}
-              </button>
-              <div style={{ color: '#9ca3af', fontSize: '0.68rem', marginBottom: 10 }}>hr, bpSys, bpDia, resp, temp, spo2 헤더 사용</div>
-
-              <button
-                data-testid="monitoring-button"
-                className={`btn secondary ${monitoringEnabled ? 'streaming-active' : ''}`}
-                disabled={!caseId || !hasVitalsFile || appStatus === 'PROCESSING'}
-                onClick={toggleStreaming}
-                style={{ width: '100%', backgroundColor: monitoringEnabled ? 'var(--grad-danger)' : undefined, color: monitoringEnabled ? 'white' : undefined }}
-              >
-                {monitoringEnabled ? <WifiOff size={18} /> : <Wifi size={18} />}
-                {monitoringEnabled ? '3. 실시간 모니터링 중단' : '3. Case Vitals 모니터링 시작'}
-              </button>
-            </div>
-
-            <details style={{ marginBottom: 12 }}>
-              <summary style={{ cursor: 'pointer', color: '#a1a1aa', fontSize: '0.78rem' }}>백업 시연 · 샘플 Case 빠른 실행</summary>
-              <div style={{ marginTop: 8, color: '#9ca3af', fontSize: '0.72rem', lineHeight: 1.5 }}>
-                파일 준비나 현장 네트워크 변수에 대비한 백업 경로입니다. 번들된 합성 Brain + Vitals를 동일 Case에 자동 연결합니다.
+              <div style={{ display: 'flex', gap: 6, margin: '10px 0', color: '#94a3b8', fontSize: '0.68rem', fontWeight: 700 }}>
+                <span>1 Case</span><span>→</span><span>2 AI Risk</span><span>→</span><span>3 병원 후보</span>
               </div>
               <button
-                className="btn secondary"
+                className="btn primary"
                 onClick={() => void startDemoCase()}
                 disabled={demoStarting || uploadMutation.isPending}
                 data-testid="demo-case-button"
-                style={{ width: '100%', marginTop: 8, minHeight: 42 }}
+                style={{ width: '100%', minHeight: 46, justifyContent: 'center' }}
               >
                 {demoStarting ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
-                {demoStarting ? '샘플 Case 준비 중...' : '샘플 Case 빠른 실행'}
+                {demoStarting ? '샘플 Case 준비 중...' : '샘플 Case 실행'}
               </button>
+              {isDemoMode && (
+                <div style={{ marginTop: 9, color: '#94a3b8', fontSize: '0.65rem', lineHeight: 1.4 }}>
+                  공개 데모 · Vision 합성/결정론적 · Vitals AI는 서버 provenance로 구분 · 비임상
+                </div>
+              )}
             </details>
 
-            <div className="slider-container">
-              <label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label>
-              <input id="opacity-slider" type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} />
-            </div>
+            <details style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer', color: '#a1a1aa', fontSize: '0.76rem', fontWeight: 700 }}>
+                직접 데이터 입력 · 고급 시연
+              </summary>
+              <div
+                data-testid="manual-upload-flow"
+                style={{
+                  marginTop: 8,
+                  padding: 11,
+                  borderRadius: 10,
+                  border: '1px solid rgba(74,222,128,0.20)',
+                  backgroundColor: 'rgba(74,222,128,0.04)',
+                }}
+              >
+                <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".npy,.nii,.nii.gz" onChange={handleFileUpload} />
+                <button
+                  data-testid="image-upload-button"
+                  className="btn primary"
+                  style={{ width: '100%', marginBottom: 7, minHeight: 42 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadMutation.isPending || monitoringEnabled}
+                >
+                  <Upload size={18} /> 1. 의료영상 업로드 · Case 생성
+                </button>
+
+                {caseId && (
+                  <div style={{ padding: '8px 9px', backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 8, marginBottom: 8, fontSize: '0.72rem' }}>
+                    <strong style={{ color: '#fff' }}>Case ID</strong>
+                    <div style={{ color: '#60a5fa', fontFamily: 'monospace', marginTop: 3 }}>{caseId}</div>
+                  </div>
+                )}
+
+                <input type="file" ref={csvInputRef} onChange={handleCsvUpload} accept=".csv" style={{ display: 'none' }} />
+                <button
+                  data-testid="vitals-upload-button"
+                  className="btn primary"
+                  style={{ width: '100%', marginBottom: 7, minHeight: 42 }}
+                  onClick={() => csvInputRef.current?.click()}
+                  disabled={!caseId || appStatus === 'PROCESSING' || monitoringEnabled}
+                >
+                  <Upload size={18} /> {hasVitalsFile ? '2. Vitals CSV 연결 완료' : '2. Vitals CSV 업로드 · 같은 Case 연결'}
+                </button>
+
+                <button
+                  data-testid="monitoring-button"
+                  className={`btn secondary ${monitoringEnabled ? 'streaming-active' : ''}`}
+                  disabled={!caseId || !hasVitalsFile || appStatus === 'PROCESSING'}
+                  onClick={toggleStreaming}
+                  style={{ width: '100%', minHeight: 42, backgroundColor: monitoringEnabled ? 'var(--grad-danger)' : undefined, color: monitoringEnabled ? 'white' : undefined }}
+                >
+                  {monitoringEnabled ? <WifiOff size={18} /> : <Wifi size={18} />}
+                  {monitoringEnabled ? '3. 실시간 모니터링 중단' : '3. Case Vitals 모니터링 시작'}
+                </button>
+                <div style={{ marginTop: 7, color: '#6b7280', fontSize: '0.64rem' }}>.npy / .nii / .nii.gz + Vitals CSV</div>
+              </div>
+            </details>
+
+            {isDemoMode && (
+              <details style={{ marginBottom: 12 }}>
+                <summary style={{ cursor: 'pointer', color: '#7f8da3', fontSize: '0.72rem' }}>데모 범위 및 제한</summary>
+                <div style={{ marginTop: 7, color: '#94a3b8', fontSize: '0.68rem', lineHeight: 1.5 }}>
+                  PACS·EMR 입력을 파일 업로드로 재현한 공개 프로토타입입니다. 실제 병원 시스템 연동이 아니며 Vision은 합성/결정론적 데모입니다. Vitals AI는 서버가 반환하는 provenance를 기준으로 실제 GRU 모델과 deterministic demo scorer를 구분합니다. 임상 진단 또는 자동 전원 결정 시스템이 아닙니다.
+                </div>
+              </details>
+            )}
+
+            <details style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer', color: '#7f8da3', fontSize: '0.72rem' }}>3D 표시 설정</summary>
+              <div className="slider-container" style={{ marginTop: 8, marginBottom: 0 }}>
+                <label htmlFor="opacity-slider">투명도 (Opacity): {Math.round(opacity * 100)}%</label>
+                <input id="opacity-slider" type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} />
+              </div>
+            </details>
           </div>
 
           <div className="info-panel">
@@ -628,7 +650,7 @@ function MainApp() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray">1단계에서 의료영상을 업로드해 Case를 생성하세요. 현장 시연 문제가 있으면 백업용 샘플 Case를 사용할 수 있습니다.</p>
+              <p className="text-sm text-gray">샘플 Case를 실행하면 영상 Context, Vitals AI Risk, Triage와 병원 탐색 흐름이 여기에 표시됩니다.</p>
             )}
           </div>
         </aside>
