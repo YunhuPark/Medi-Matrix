@@ -124,31 +124,33 @@ describe('App Component', () => {
     vi.mocked(bootstrapTransferDemoCase).mockResolvedValue(demoResponse);
   });
 
-  it('첫 방문에서 로그인 화면 없이 전원 지원 제품 UI가 즉시 표시됨', async () => {
+  it('첫 방문에서 로그인 화면 없이 핵심 전원 지원 흐름이 즉시 표시됨', async () => {
     renderApp();
 
     expect(await screen.findByText('Medi-Matrix')).toBeInTheDocument();
-    expect(screen.getByText(/중증환자의 영상·Vitals를 전원 의사결정까지 연결/i)).toBeInTheDocument();
+    expect(screen.getByText(/영상 \+ Vitals → AI Risk → 필요한 의료자원 → 전원 병원 탐색/i)).toBeInTheDocument();
     expect(screen.queryByText('Medi-Matrix 로그인')).not.toBeInTheDocument();
   });
 
-  it('직접 의료영상 + Vitals 업로드가 메인 시연 흐름으로 기본 노출됨', async () => {
+  it('샘플 Case가 가장 먼저 보이는 빠른 시작 흐름으로 제공됨', async () => {
     renderApp();
 
-    expect(await screen.findByTestId('manual-upload-flow')).toBeInTheDocument();
-    expect(screen.getByText(/메인 시연 · 직접 Case 구성/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('quick-demo-flow')).toBeInTheDocument();
+    expect(screen.getByText('샘플 중증환자 Case')).toBeInTheDocument();
+    expect(screen.getByTestId('demo-case-button')).toHaveTextContent('샘플 Case 실행');
+    expect(screen.getByText(/1 Case/)).toBeInTheDocument();
+    expect(screen.getByText(/2 AI Risk/)).toBeInTheDocument();
+    expect(screen.getByText(/3 병원 후보/)).toBeInTheDocument();
+  });
+
+  it('직접 파일 업로드 흐름은 고급 시연으로 접어서 유지됨', async () => {
+    renderApp();
+
+    expect(await screen.findByText(/직접 데이터 입력 · 고급 시연/i)).toBeInTheDocument();
+    expect(screen.getByTestId('manual-upload-flow')).toBeInTheDocument();
     expect(screen.getByTestId('image-upload-button')).toHaveTextContent('1. 의료영상 업로드 · Case 생성');
     expect(screen.getByTestId('vitals-upload-button')).toHaveTextContent('2. Vitals CSV 업로드 · 같은 Case 연결');
     expect(screen.getByTestId('monitoring-button')).toHaveTextContent('3. Case Vitals 모니터링 시작');
-    expect(screen.getByText(/PACS·EMR에서 들어올 입력을 의료영상 파일과 Vitals CSV 업로드로 재현/i)).toBeInTheDocument();
-  });
-
-  it('샘플 Case 원클릭은 백업 시연으로 분리됨', async () => {
-    renderApp();
-
-    expect(await screen.findByText(/백업 시연 · 샘플 Case 빠른 실행/i)).toBeInTheDocument();
-    expect(screen.getByTestId('demo-case-button')).toHaveTextContent('샘플 Case 빠른 실행');
-    expect(screen.queryByText('Demo Case 한 번에 실행')).not.toBeInTheDocument();
   });
 
   it('세션 초기화 버튼을 사용할 수 있음', async () => {
@@ -162,8 +164,8 @@ describe('App Component', () => {
   it('demo 모드를 실제 병원 연동이나 임상 AI 진단으로 표현하지 않음', async () => {
     renderApp();
 
-    expect(await screen.findByText(/실제 병원 시스템 연동이 아니며/i)).toBeInTheDocument();
-    expect(screen.getByText(/임상 진단 또는 자동 전원 결정 시스템이 아닙니다/i)).toBeInTheDocument();
+    expect(await screen.findByText(/공개 데모 · Vision 합성\/결정론적/i)).toBeInTheDocument();
+    expect(screen.getByText(/비임상/i)).toBeInTheDocument();
     expect(screen.queryByText(/Real-Data Ready/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/실제 환자 데이터 스트리밍/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/PyTorch Inference/i)).not.toBeInTheDocument();
