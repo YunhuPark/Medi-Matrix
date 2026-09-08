@@ -1,160 +1,216 @@
-# 🧠 Medical 3D Vision & Time-series Multi-modal Triage System (Prototype)
+# Medi-Matrix — 중증환자 전원 의사결정 지원 AI
 
-> ⚠️ **주의 (Disclaimer)**
-> 본 프로젝트는 의료용 진단 시스템이 아닙니다. **개인 포트폴리오 및 연구용 프로토타입**으로 개발되었습니다.
-> 식별 가능한 실제 환자의 민감한 의료 데이터나 생체 신호(EMR/CSV)를 업로드해서는 안 됩니다.
-> **현재 공개 심사용으로 배포된 버전은 `INFERENCE_MODE=demo`로 동작하며, 실제 PyTorch AI 모델이 아닌 합성 데이터 전용 시뮬레이션 결과를 반환합니다.**
-> (Auth, Private Storage, Signed URL, 사용자 격리, WebSocket 통신 아키텍처를 검증하기 위한 프로토타입입니다.)
+> **Disclaimer**
+> Medi-Matrix는 의료 진단 시스템이 아니라 개인 포트폴리오 및 연구용 비임상 프로토타입입니다. 실제 환자 식별정보나 민감한 의료 데이터를 공개 데모에 업로드해서는 안 됩니다. 공개 데모의 영상(Vision) 입력은 합성/결정론적 데모이며, Vitals AI는 별도 provenance를 통해 실제 학습 모델과 demo scorer를 구분합니다. 모든 Triage/전원 자원 매핑은 임상 기준이 아닌 데모 정책입니다.
 
-의료 AI 영상 데이터(NIfTI, NumPy)를 파싱하여 브라우저 상에서 실시간 3D 그래픽으로 렌더링하고, 분석된 환자의 병변 체적 데이터와 **IMST-Mamba (시계열 패혈증 예측 모델 - 현재 데모/실험적 수준)** 데이터를 결합하여 최종 응급도(Triage) 라우팅 프로토타입을 구현하는 **멀티모달(Multi-modal) 마이크로서비스(MSA) 시스템**입니다.
-
-단순한 2D 이미지 출력을 넘어, **3D 영상 부피 데이터와 환자의 시계열 생체 신호(ICU Vitals)를 융합하는 워크플로우 아이디어**를 프로토타입으로 시연합니다.
-
-## ✨ 주요 기능 (Key Features)
-
-### 1. 🏥 의료 포맷 파싱 지원 (`NIfTI` & `NumPy`)
-일반적인 이미지 파일이 아닌, 3D 텐서 데이터인 **`.nii.gz` (NIfTI)** 포맷과 **`.npy`** 배열을 백엔드에서 파싱합니다.
-- `nibabel` 라이브러리를 활용해 백엔드에서 원본 의료 데이터를 NumPy 3D 배열로 실시간 변환.
-
-### 2. 🧊 Marching Cubes 알고리즘 기반 3D 메쉬 생성
-3D 배열의 각 복셀(Voxel) 데이터를 폴리곤 메쉬로 추출합니다.
-- `scikit-image`의 Marching Cubes 알고리즘을 사용해 병변의 표면 메쉬 계산.
-- 추출된 메쉬를 웹 렌더링에 적합한 `GLB` 포맷으로 변환.
-
-### 3. 🔒 보안 스토리지 (Private Storage) & JWT 인증
-의료 메쉬 데이터를 안전하게 보호하기 위해 Supabase Auth 및 Private Storage를 사용합니다.
-- **Supabase Auth**: 프론트엔드 로그인 및 JWT 기반 API 접근 제어.
-- **Private Storage & 사용자 격리**: `{user_id}/{mesh_uuid}.glb` 구조로 사용자별 안전하게 격리 저장.
-- **만료형 Signed URL**: 인증된 사용자만 접근할 수 있는 제한 시간(예: 10분) 만료형 Signed URL 발급.
-
-### 4. 🚀 멀티모달(Multi-modal) Triage 프로토타입 (Mamba & WebSocket)
-의료 영상과 시계열 생체 신호를 융합하는 데모 파이프라인입니다.
-- **WebSocket 리플레이**: 환자의 CSV Vitals 데이터를 실시간 WebSocket으로 스트리밍.
-- **Mamba 예측 모델 (Demo)**: IMST-Mamba의 시뮬레이터(또는 실험적 추론 구조)를 통해 실시간 패혈증, ARDS, 쇼크 등 예측 확률을 모의 산출.
-- **Triage 평가**: 영상(Volume) + 시계열(Vitals) 데이터를 융합하여 `🔴 RED`, `🟡 YELLOW`, `🟢 GREEN` 응급도 라우팅을 실험적으로 시연.
-
----
-
-## 📂 공모전 심사용 합성 데이터 (Synthetic Demo Datasets)
-
-이 프로젝트는 심사 및 시연을 위해 **100% 코드로 생성된 합성 데이터(Synthetic Data)**를 제공합니다. 
-> **주의**: 실제 환자 데이터는 절대로 업로드하지 마십시오. 본 데이터는 임상 진단용이 아닙니다.
-> 최종 출품작 설명서에서 본 합성 데이터를 포함한 **Google Drive 링크**를 제공할 예정입니다.
-
-### 데이터 생성 및 패키지 생성 방법 (로컬)
-1. **생성 명령**:
-   ```bash
-   cd backend
-   python scripts/generate_demo_data.py --force --package
-   ```
-2. **생성 결과**:
-   - `backend/demo_datasets/generated/` 내에 개별 파일들이 생성됩니다.
-   - `contest_artifacts/Medi-Matrix_Contest_Demo.zip` 패키지가 생성됩니다.
-   - **주의**: 생성 산출물(`.csv`, `.nii.gz`, `.npy`, `.zip` 등)은 Git에 추적(Commit)되지 않습니다.
-
-생성된 파일 또는 출품작 설명서의 ZIP 파일을 해제한 후, 프론트엔드 UI를 통해 직접 업로드하여 Triage 분석 흐름을 테스트할 수 있습니다.
-
----
-
-## 🏗️ 아키텍처 (Architecture)
+Medi-Matrix는 중증환자를 다른 병원으로 전원해야 할 때, 의료영상과 Vitals를 하나의 Case Context로 정리하고 현재 환자에게 필요한 의료자원을 도출한 뒤 Golden-Time의 공개 응급의료 자원 정보와 연결해 전원 병원 후보 탐색까지 이어지는 E2E 의사결정 지원 프로토타입입니다.
 
 ```text
-[ 클라이언트 (React + Vite) ] --- (Supabase Auth JWT 획득)
-         │
-         │  1. 의료 데이터 업로드 (.nii.gz / .npy) + JWT 인증
-         ▼
-[ 메인 서버 (FastAPI) ]
-  ├─ nibabel: NIfTI 데이터 파싱
-  ├─ scikit-image: Marching Cubes 3D 추출
-  ├─ trimesh: GLB 파일 변환
-  │
-  ├─ 2. 메쉬 파일 저장 ──▶ [ Supabase Private Storage ] ({user_id} 격리 보관)
-  ├─ 3. 만료형 Signed URL 발급 ──▶ 클라이언트에 반환 (Three.js 시각화)
-  │
-  └─ 4. Vitals CSV 업로드 및 WebSocket 실시간 스트리밍
-         │
-         ▼
-[ IMST-Mamba (실험적 시뮬레이터) ]
-  │
-  └─ 5. 멀티모달 융합 평가 (병변 Volume + Mamba 추론 결과 = 응급도 도출)
+PACS / 의료영상 ─┐
+                 ├─> Medi-Matrix Case -> AI Risk / Triage Context -> 필요한 의료자원
+EMR / Vitals ────┘                                         |
+                                                           v
+                                  Golden-Time -> 공개 응급의료 자원 기반 후보 탐색/랭킹
 ```
 
----
+현재 `.nii/.npy/.csv` 업로드는 병원 PACS/EMR 연동 전 단계의 **MVP 입력 어댑터**입니다.
 
-## 🛠️ 기술 스택 (Tech Stack)
+## 현재 공개 배포 상태
+
+- Frontend: https://medi-matrix.vercel.app
+- Backend: `medi-matrix-backend-preview` Render Web Service
+- Vision inference: `INFERENCE_MODE=demo`
+- Vitals inference: `VITALS_INFERENCE_MODE=model`
+- Vitals model: `vitals_gru_challenge2019_v1`
+- Clinical use: `false`
+
+즉 공개 배포에서 **Vision은 합성/결정론적 데모**, **Vitals는 실제 PyTorch GRU 모델 추론**으로 동작합니다. 두 영역의 검증 수준을 동일하게 표현하지 않습니다.
+
+## Vitals AI
+
+Vitals 모델은 PhysioNet / Computing in Cardiology Challenge 2019 데이터를 사용해 학습한 Causal GRU입니다.
+
+- 입력 기본 Vitals: HR, SBP, DBP, Resp, Temp, SpO2
+- 모델 입력: 값 + 관측 여부 + recency + 시간 특성, 총 19 features
+- Target: official `SepsisLabel`
+- Split: patient-level stratified 70/15/15, seed 42
+- Threshold: validation patients에서 normalized Challenge Utility를 최대화하도록 선택
+- Test AUROC: **0.7946**
+- Test AUPRC: **0.0950**
+- Test Challenge Utility: **0.3451**
+- Test sensitivity: **0.5602**
+- Test specificity: **0.8582**
+
+모델 산출물과 전처리/평가 메타데이터는 `backend/models/vitals_gru_challenge2019_v1/`에 포함되어 있습니다.
+
+중요한 제한:
+- 실제 임상 검증 모델이 아닙니다.
+- 공개 UI의 threshold는 비임상 연구/데모 기준입니다.
+- model mode에서 ARDS/shock 확률을 임의 생성하지 않습니다.
+
+## 주요 기능
+
+### 1. Case 기반 Imaging + Vitals 연결
+
+의료영상과 시계열 생체신호를 하나의 Case Context로 묶고 실시간 상태 변화, Triage, 전원 탐색 조건을 같은 흐름에서 관리합니다.
+
+### 2. 3D 의료영상 데모 파이프라인
+
+- `.nii.gz`, `.npy` 3D 배열 파싱
+- `nibabel`, `numpy`
+- Marching Cubes 기반 mesh 추출
+- `GLB` 변환 및 Three.js 렌더링
+
+현재 공개 Vision 결과는 합성 입력과 deterministic/demo inference를 사용합니다. 실제 임상 segmentation 성능을 주장하지 않습니다.
+
+### 3. 실제 Vitals GRU + WebSocket
+
+- Vitals sequence를 Case WebSocket으로 스트리밍
+- 실제 `vitals_gru_challenge2019_v1` 추론
+- `ai_risk` payload에 `model_id`, `threshold`, `source`, `target`, `inference_mode`, `clinical_use` 포함
+- 프론트엔드가 model/demo provenance를 명확히 구분
+
+### 4. Grounded AI Transfer Brief
+
+GRU provenance와 threshold evidence를 바탕으로 비임상 Transfer Brief를 구성합니다. LLM이 임의로 생성하는 요약이 아니라 현재 모델 근거를 결정론적으로 연결합니다.
+
+### 5. 전원 자원 조건 -> Golden-Time handoff
+
+현재 Case의 데모 Triage와 영상 Context에서 필요한 자원을 구조적으로 도출합니다.
+
+예시 Brain YELLOW:
+- ICU
+- brain imaging
+- neurosurgery
+- neurology
+
+RED에서는 여기에 emergency room, emergency medicine, internal medicine 등 전신 악화 대응 자원이 추가됩니다.
+
+Medi-Matrix는 `resourceContract=transfer_resources_v1`과 allowlisted `capabilities` / `specialties`를 Golden-Time으로 전달합니다. Golden-Time은 실제 E-Gen 기반 병원 데이터의 응급실 병상, ICU, CT/MRI, 진료과 등의 가용 정보와 매칭해 후보 랭킹에 반영합니다.
+
+이 결과는 자동 전원 결정이 아니라 **후보 탐색/우선순위 지원**입니다.
+
+## 보안 및 데모 세션
+
+- Supabase Auth JWT
+- Private Storage
+- 사용자별 파일 격리
+- 만료형 Signed URL
+- 익명 공모전 demo session도 정식 JWT를 사용하며 인증/격리를 우회하지 않음
+- Golden-Time handoff URL에 access token, authorization, patient ID, mesh ID, signed URL 등을 전달하지 않음
+
+## 공모전 데모 데이터
+
+공개 심사 UX는 개인정보 보호와 재현성을 위해 synthetic demo input을 사용합니다.
+
+```bash
+cd backend
+python scripts/generate_demo_data.py --force --package
+```
+
+생성 결과:
+- `backend/demo_datasets/generated/`
+- `contest_artifacts/Medi-Matrix_Contest_Demo.zip`
+
+생성 산출물은 Git에 추적하지 않습니다.
+
+## Production E2E 검증 범위
+
+브라우저 기반 production smoke에서 다음 경로를 검증했습니다.
+
+```text
+Sample Case
+-> authenticated demo bootstrap
+-> WebSocket
+-> real Vitals GRU provenance
+-> AI Risk UI
+-> Grounded Transfer Brief
+-> structured transfer resources
+-> Golden-Time popup handoff
+-> Golden-Time RED/YELLOW context UI receipt
+```
+
+검증 대상 production URL은 `https://medi-matrix.vercel.app`입니다.
+
+라이브 E-Gen 병원 카드 하나가 실제로 특정 자원과 매칭되었다는 것까지 브라우저 E2E에서 고정 assertion한 것은 아닙니다. explicit resource -> ranking 로직은 Golden-Time의 테스트로 별도 검증합니다.
+
+## 기술 스택
 
 ### Frontend
-- **Framework**: Node 24, React 18 (TypeScript), Vite
-- **3D Rendering**: Three.js, React Three Fiber, `drei`
+- React 18
+- TypeScript
+- Vite
+- Three.js / React Three Fiber / drei
 
 ### Backend
-- **Framework**: Python 3.11, FastAPI, Uvicorn, WebSockets
-- **Medical/Data**: `nibabel`, `numpy`
-- **3D Processing**: `scikit-image` (Marching Cubes), `trimesh`
-- **Security**: Supabase Auth (JWT), Storage (Private)
-- **Private Storage**: Supabase를 사용하여 사용자별(`.csv`, `.npy`) 파일 격리 보안 정책 적용 (1:1 격리)
+- Python 3.11
+- FastAPI / Uvicorn / WebSockets
+- PyTorch
+- nibabel / numpy
+- scikit-image / trimesh
+- Supabase Auth / Private Storage
 
-### 공모전 UX: Frictionless Authenticated Demo Session
-- 기본 공모전 UX는 로그인(이메일/비밀번호) 화면 없는 익명 인증 데모로 제공됩니다.
-- 익명 사용자도 Supabase JWT를 정식으로 발급받아 사용하므로 **백엔드의 인증, Private Storage 사용자 격리, Rate Limit을 절대 우회하지 않습니다.**
-- 이 익명 계정은 브라우저 저장소 초기화 시 복구할 수 없는 일회성 데모 세션으로 기능합니다.
-- **실제 환자 데이터 사용 금지**: 모든 시연은 합성 데모 데이터를 사용해야 합니다.
-- 공개 배포 시에는 CAPTCHA 및 일정 시간 지난 익명 사용자 정리 정책 도입을 권장합니다.
+### Deployment
+- Frontend: Vercel
+- Backend: Render Docker Web Service
+- Storage/Auth: Supabase
 
-## Deployment Status
-- **Frontend (Vercel)**: https://medi-matrix.vercel.app
-- **Backend (Render)**: Docker Web Service 기반 배포 준비 완료 (`render.yaml` 포함)
-  - *참고*: 모델 로드 과정 등을 고려할 때 Render 인스턴스의 메모리가 최소 1GB~2GB 이상 필요할 수 있습니다.
-- **Storage (Supabase)**: Auth 및 Private Storage 적용 완료
+## 로컬 실행
 
-## Supabase Dashboard 필수 설정
-배포 시 다음 설정이 반드시 필요합니다:
-1. **Authentication > Providers**: `Anonymous Sign-Ins` 활성화
-2. **Storage**: `medical-vitals` 및 `medical-meshes` 버킷 생성
-3. **Storage Policies**: 사용자 식별자 기반 데이터 접근을 허용하는 RLS 및 파일 격리 정책 생성(Private)
+### 1. 환경 변수
 
----
+`backend/.env.example` 및 프론트엔드 환경 변수 예시를 참고해 로컬 `.env`를 구성합니다. 비밀키는 Git에 커밋하지 않습니다.
 
-## ⚙️ 배포 및 실행 가이드 (How to run)
+### 2. Frontend
 
-> **[안내] 현재 저장소에는 Dockerfile과 Render 배포용 설정(`render.yaml`)이 포함되어 있습니다.**
-> 프론트엔드(Vercel 등) 외에 **반드시** 백엔드를 별도 호스팅해야 합니다.
-
-### 1. 환경 변수 설정
-`backend/.env.example`을 참고하여 프론트엔드와 백엔드에 각각 `.env` 파일을 생성하고 Supabase 키(URL, Role Key 등)를 입력합니다.
-
-### 2. 프론트엔드 구동 (Port: 5173)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 3. 백엔드 구동 (Port: 8000)
+### 3. Backend — demo 중심 기본 실행
+
 ```bash
 cd backend
 pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+### 4. Vitals model mode
 
-## Render 배포 (백엔드)
+Vitals 실제 모델 추론에는 ML 의존성과 모델 artifact가 필요합니다. 현재 배포 Docker 구성은 Vitals 모델 artifact와 ML requirements를 포함하도록 구성되어 있습니다.
 
-본 저장소는 백엔드(FastAPI)와 프론트엔드(React/Vite)가 분리 배포되는 구조입니다. 프론트엔드는 Vercel에, 백엔드는 Render에 배포할 수 있습니다.
+주요 환경 변수:
 
-### Demo 모드와 Model 모드
-- **Demo 모드**: `INFERENCE_MODE=demo` (기본값 및 현재 공개 배포 환경). 임상 진단용 실제 PyTorch 모델을 사용하지 않고 시뮬레이터를 통해 결정론적 결과를 보여줍니다. 실제 모델의 정확도나 추론 결과가 아니며, 합성 데이터 파이프라인과 아키텍처(Auth, WebSocket 등) 검증에 목적을 둡니다.
-- **Model 모드**: `INFERENCE_MODE=model`. 실제 PyTorch 모델(UNet3D, Mamba)을 로드합니다. 별도 ML 의존성이 필요하며 Out of Memory (OOM)를 피하기 위해 **최소 2GB 이상의 유료 인스턴스(Standard)**를 권장합니다. Docker 빌드 시 `INSTALL_ML=true` 옵션이 필요합니다.
+```text
+APP_ENV=production
+INFERENCE_MODE=demo
+VITALS_INFERENCE_MODE=model
+VITALS_MODEL_PATH=backend/models/vitals_gru_challenge2019_v1/model.pt
+ALLOWED_ORIGINS=https://medi-matrix.vercel.app
+```
 
-### Supabase 스토리지
-- medical-meshes: 3D 모델(GLB) 파일 저장
-- medical-vitals: 환자 시계열 데이터(CSV) 임시 저장 (로컬 파일 시스템 의존성 제거를 위해 필수)
+Vision과 Vitals inference mode는 서로 독립적입니다. `INFERENCE_MODE=demo`라고 해서 Vitals까지 demo라는 뜻은 아닙니다.
 
-### 환경 변수 안내
-백엔드 배포 플랫폼(Render) 설정에 다음 환경변수를 등록해야 합니다:
-- `APP_ENV=production`
-- `INFERENCE_MODE=demo` (실제 운영 시 model 변경 후 재빌드)
-- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
-- `SUPABASE_STORAGE_BUCKET=medical-meshes`
-- `SUPABASE_VITALS_BUCKET=medical-vitals`
-- `ALLOWED_ORIGINS=https://medi-matrix.vercel.app`
+## 프로젝트 경계
+
+현재 안전하게 주장할 수 있는 범위:
+
+- 실제 PhysioNet 기반 GRU Vitals inference가 배포 환경에서 로드되고 추론됨
+- 브라우저 production E2E에서 해당 model provenance가 UI까지 전달됨
+- Vision은 synthetic/deterministic demo
+- Transfer Brief는 model evidence를 기반으로 한 deterministic support summary
+- Golden-Time은 공개 응급의료 자원과 구조화된 transfer requirement를 연결하는 후보 탐색 시스템
+
+주장하지 않는 범위:
+
+- 임상 진단/임상 검증 완료
+- 실제 환자에서 검증된 same-patient multimodal AI
+- Vision의 실제 임상 segmentation 성능
+- 자동 최적 병원 결정
+- 자동 전원 지시
+
+## 제출 자료
+
+Wanted AI Championship 2026 제출용 최종 문구와 5장 스크린샷 storyboard는 `docs/AI_CHAMPIONSHIP_2026_SUBMISSION.md`를 참고하세요.

@@ -1,0 +1,244 @@
+name: Production E2E Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/production-e2e-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  production-e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify production Case -> AI Risk -> Transfer Brief -> Golden-Time handoff
+        env:
+          E2E_URL: https://medi-matrix.vercel.app
+          GOLDEN_TIME_URL: https://golden-time.vercel.app
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+
+          async function main() {
+            const expectedModelId = 'vitals_gru_challenge2019_v1';
+            const expectedResourceContract = 'transfer_resources_v1';
+            const baseUrl = process.env.E2E_URL;
+            const goldenTimeBaseUrl = process.env.GOLDEN_TIME_URL;
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              geolocation: { latitude: 37.5665, longitude: 126.9780 },
+              permissions: ['geolocation'],
+            });
+            const page = await context.newPage();
+
+            let aiRiskFrame = null;
+            const browserErrors = [];
+
+            page.on('pageerror', (error) => browserErrors.push(`pageerror: ${error.message}`));
+            page.on('console', (message) => {
+              if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
+            });
+            page.on('websocket', (socket) => {
+              socket.on('framereceived', ({ payload }) => {
+                if (typeof payload !== 'string') return;
+                try {
+                  const data = JSON.parse(payload);
+                  if (data && data.ai_risk) aiRiskFrame = data.ai_risk;
+                } catch {
+                  // Ignore non-JSON WebSocket frames.
+                }
+              });
+            });
+
+            try {
+              await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+              const demoButton = page.getByTestId('demo-case-button');
+              const backupDetails = demoButton.locator('xpath=ancestor::details');
+              await backupDetails.evaluate((element) => {
+                element.open = true;
+              });
+              await demoButton.waitFor({ state: 'visible', timeout: 60_000 });
+              await demoButton.click();
+
+              const riskPanel = page.getByTestId('ai-risk-panel');
+              await riskPanel.waitFor({ state: 'visible', timeout: 120_000 });
+
+              const panelText = await riskPanel.innerText();
+              if (!panelText.includes('Causal GRU')) {
+                throw new Error(`AI Risk panel did not show Causal GRU provenance. Text: ${panelText}`);
+              }
+              if (!panelText.includes(expectedModelId)) {
+                throw new Error(`AI Risk panel did not show model_id=${expectedModelId}. Text: ${panelText}`);
+              }
+
+              const transferBrief = page.getByTestId('ai-transfer-brief');
+              await transferBrief.waitFor({ state: 'visible', timeout: 30_000 });
+              const transferBriefText = await transferBrief.innerText();
+              if (!transferBriefText.includes('AI Transfer Brief · Grounded Vitals evidence')) {
+                throw new Error(`Transfer Brief did not show grounded model evidence. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes(expectedModelId)) {
+                throw new Error(`Transfer Brief did not include model_id=${expectedModelId}. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes('clinical_use=false')) {
+                throw new Error(`Transfer Brief did not preserve clinical_use=false. Text: ${transferBriefText}`);
+              }
+              if (!transferBriefText.includes('Validation threshold')) {
+                throw new Error(`Transfer Brief did not expose validation threshold evidence. Text: ${transferBriefText}`);
+              }
+
+              const deadline = Date.now() + 30_000;
+              while (!aiRiskFrame && Date.now() < deadline) {
+                await page.waitForTimeout(500);
+              }
+              if (!aiRiskFrame) {
+                throw new Error('No WebSocket frame with ai_risk provenance was observed.');
+              }
+              if (aiRiskFrame.inference_mode !== 'model') {
+                throw new Error(`Expected ai_risk.inference_mode=model, got ${aiRiskFrame.inference_mode}`);
+              }
+              if (aiRiskFrame.model_id !== expectedModelId) {
+                throw new Error(`Expected ai_risk.model_id=${expectedModelId}, got ${aiRiskFrame.model_id}`);
+              }
+              if (aiRiskFrame.clinical_use !== false) {
+                throw new Error(`Expected ai_risk.clinical_use=false, got ${aiRiskFrame.clinical_use}`);
+              }
+
+              const triageSearchButton = page.getByRole('button', {
+                name: /RED · 긴급 전원 병원 탐색|YELLOW · 전원 병원 후보 확인/,
+              });
+              await triageSearchButton.waitFor({ state: 'visible', timeout: 120_000 });
+              await triageSearchButton.click();
+
+              const resourcePanel = page.getByTestId('transfer-resource-requirements');
+              await resourcePanel.waitFor({ state: 'visible', timeout: 30_000 });
+              const resourcePanelText = await resourcePanel.innerText();
+              if (!resourcePanelText.includes('전원 후보 탐색 자원 조건')) {
+                throw new Error(`Transfer resource panel was not rendered. Text: ${resourcePanelText}`);
+              }
+              if (!resourcePanelText.includes('ICU') || !resourcePanelText.includes('CT/MRI')) {
+                throw new Error(`Transfer resource panel missed core Brain transfer resources. Text: ${resourcePanelText}`);
+              }
+
+              const goldenTimeButton = page.getByRole('button', {
+                name: /RED · 긴급 이송 병원 탐색|YELLOW · 대응 병원 후보 확인/,
+              });
+              await goldenTimeButton.waitFor({ state: 'visible', timeout: 30_000 });
+
+              const popupPromise = page.waitForEvent('popup', { timeout: 30_000 });
+              await goldenTimeButton.click();
+              const goldenPage = await popupPromise;
+              await goldenPage.waitForURL((url) => url.hostname.includes('golden-time'), { timeout: 30_000 });
+
+              const handoffUrl = new URL(goldenPage.url());
+              const expectedGoldenOrigin = new URL(goldenTimeBaseUrl).origin;
+              if (handoffUrl.origin !== expectedGoldenOrigin) {
+                throw new Error(`Golden-Time origin mismatch. Expected ${expectedGoldenOrigin}, got ${handoffUrl.origin}`);
+              }
+              if (handoffUrl.searchParams.get('resourceContract') !== expectedResourceContract) {
+                throw new Error(`Expected resourceContract=${expectedResourceContract}, got ${handoffUrl.searchParams.get('resourceContract')}`);
+              }
+              if (handoffUrl.searchParams.get('analysisMode') !== 'synthetic_demo') {
+                throw new Error(`Expected analysisMode=synthetic_demo, got ${handoffUrl.searchParams.get('analysisMode')}`);
+              }
+              if (handoffUrl.searchParams.get('clinicalValidation') !== 'false') {
+                throw new Error(`Expected clinicalValidation=false, got ${handoffUrl.searchParams.get('clinicalValidation')}`);
+              }
+
+              const triage = handoffUrl.searchParams.get('triage');
+              if (!['RED', 'YELLOW'].includes(triage)) {
+                throw new Error(`Expected RED or YELLOW handoff triage, got ${triage}`);
+              }
+
+              const capabilities = new Set((handoffUrl.searchParams.get('capabilities') || '').split(',').filter(Boolean));
+              const specialties = new Set((handoffUrl.searchParams.get('specialties') || '').split(',').filter(Boolean));
+              for (const requiredCapability of ['icu', 'brain_imaging']) {
+                if (!capabilities.has(requiredCapability)) {
+                  throw new Error(`Handoff missed capability=${requiredCapability}. Got: ${Array.from(capabilities).join(',')}`);
+                }
+              }
+              for (const requiredSpecialty of ['neurosurgery', 'neurology']) {
+                if (!specialties.has(requiredSpecialty)) {
+                  throw new Error(`Handoff missed specialty=${requiredSpecialty}. Got: ${Array.from(specialties).join(',')}`);
+                }
+              }
+              if (triage === 'RED') {
+                for (const requiredCapability of ['emergency_room']) {
+                  if (!capabilities.has(requiredCapability)) {
+                    throw new Error(`RED handoff missed capability=${requiredCapability}. Got: ${Array.from(capabilities).join(',')}`);
+                  }
+                }
+                for (const requiredSpecialty of ['emergency_medicine', 'internal_medicine']) {
+                  if (!specialties.has(requiredSpecialty)) {
+                    throw new Error(`RED handoff missed specialty=${requiredSpecialty}. Got: ${Array.from(specialties).join(',')}`);
+                  }
+                }
+              }
+
+              const serializedHandoff = handoffUrl.toString();
+              const sensitivePatterns = [
+                /access_token/i,
+                /authorization/i,
+                /patient_?id/i,
+                /mesh_?id/i,
+                /signed_url/i,
+                /X-Amz-Signature/i,
+              ];
+              for (const pattern of sensitivePatterns) {
+                if (pattern.test(serializedHandoff)) {
+                  throw new Error(`Sensitive data pattern leaked into Golden-Time handoff: ${pattern}`);
+                }
+              }
+
+              await goldenPage.getByRole('heading', { name: /Golden Time/ }).waitFor({
+                state: 'visible',
+                timeout: 120_000,
+              });
+              const expectedModeText = triage === 'RED'
+                ? '초응급(RED) 환자 이송 모드'
+                : '응급(YELLOW) 환자 집중 관찰';
+              await goldenPage.getByText(expectedModeText, { exact: false }).waitFor({
+                state: 'visible',
+                timeout: 120_000,
+              });
+
+              console.log('E2E_PASS');
+              console.log(`ai_risk.inference_mode=${aiRiskFrame.inference_mode}`);
+              console.log(`ai_risk.model_id=${aiRiskFrame.model_id}`);
+              console.log(`ai_risk.clinical_use=${aiRiskFrame.clinical_use}`);
+              console.log('ai_transfer_brief=grounded_model_evidence');
+              console.log(`golden_time.resourceContract=${handoffUrl.searchParams.get('resourceContract')}`);
+              console.log(`golden_time.triage=${triage}`);
+              console.log(`golden_time.capabilities=${Array.from(capabilities).join(',')}`);
+              console.log(`golden_time.specialties=${Array.from(specialties).join(',')}`);
+              console.log('golden_time.ui=handoff_received');
+              if (browserErrors.length) {
+                console.log(`Non-fatal browser errors observed: ${browserErrors.join(' | ')}`);
+              }
+            } finally {
+              await context.close();
+              await browser.close();
+            }
+          }
+
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE

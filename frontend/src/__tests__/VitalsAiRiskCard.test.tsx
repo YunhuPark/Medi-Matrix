@@ -22,7 +22,9 @@ describe('VitalsAiRiskCard', () => {
     expect(screen.getByText('73.4%')).toBeInTheDocument()
     expect(screen.getByText(/Causal GRU · PhysioNet 2019/i)).toBeInTheDocument()
     expect(screen.getByText(/Validation threshold 60.0% · 임상 cutoff 아님/i)).toBeInTheDocument()
-    expect(screen.getByText(/vitals_gru_challenge2019_v1/i)).toBeInTheDocument()
+    expect(
+      screen.getByText('vitals_gru_challenge2019_v1', { selector: 'code' }),
+    ).toBeInTheDocument()
     expect(screen.getByText(/진단 또는 자동 전원 결정이 아닙니다/i)).toBeInTheDocument()
   })
 
@@ -41,7 +43,7 @@ describe('VitalsAiRiskCard', () => {
       />,
     )
 
-    expect(screen.getByText(/Deterministic demo scorer/i)).toBeInTheDocument()
+    expect(screen.getByText('Deterministic demo scorer')).toBeInTheDocument()
     expect(screen.getByText(/학습된 임상 AI 결과가 아닙니다/i)).toBeInTheDocument()
     expect(screen.queryByText(/Validation threshold/i)).not.toBeInTheDocument()
   })

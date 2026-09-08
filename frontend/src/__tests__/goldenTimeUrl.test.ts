@@ -15,6 +15,7 @@ import {
   buildGoldenTimeUrl,
   assertNoSensitiveData,
   getGoldenTimeBaseUrl,
+  RESOURCE_HANDOFF_CONTRACT,
 } from '../lib/goldenTimeUrl';
 
 describe('getGoldenTimeBaseUrl', () => {
@@ -57,6 +58,8 @@ describe('RED systemic contract', () => {
   it('RED systemic context에는 응급실/ICU와 Brain 영상 자원이 함께 포함된다', () => {
     const url = new URL(makeBrainRed('ARDS-like'));
 
+    expect(url.searchParams.get('resourceContract')).toBe(RESOURCE_HANDOFF_CONTRACT);
+
     const caps = url.searchParams.get('capabilities') ?? '';
     expect(caps).toContain('emergency_room');
     expect(caps).toContain('icu');
@@ -82,6 +85,7 @@ describe('RED systemic contract', () => {
     expect(url.searchParams.has('secondaryConditions')).toBe(false);
     expect(url.searchParams.get('analysisSources')).toBe('vitals');
     expect(url.searchParams.has('vitalsCondition')).toBe(false);
+    expect(url.searchParams.get('resourceContract')).toBe(RESOURCE_HANDOFF_CONTRACT);
   });
 });
 
@@ -99,6 +103,7 @@ describe('YELLOW / Brain contract', () => {
     expect(url.searchParams.get('primaryCondition')).toBe('brain_lesion_demo');
     expect(url.searchParams.get('secondaryConditions')).toBe('sepsis_demo');
     expect(url.searchParams.get('vitalsCondition')).toBe('Sepsis-like');
+    expect(url.searchParams.get('resourceContract')).toBe(RESOURCE_HANDOFF_CONTRACT);
   });
 
   it('Brain 단독이면 MRI source와 brain capabilities를 유지한다', () => {
@@ -112,6 +117,7 @@ describe('YELLOW / Brain contract', () => {
 
     expect(url.searchParams.get('analysisSources')).toBe('mri');
     expect(url.searchParams.get('primaryCondition')).toBe('brain_lesion_demo');
+    expect(url.searchParams.get('resourceContract')).toBe(RESOURCE_HANDOFF_CONTRACT);
     const caps = url.searchParams.get('capabilities') ?? '';
     expect(caps).toContain('brain_imaging');
     expect(caps).toContain('icu');

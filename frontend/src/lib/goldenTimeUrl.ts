@@ -16,6 +16,7 @@ export type TriageLevel = (typeof ALLOWED_TRIAGE)[number];
 
 const MAX_VITALS_CONDITION_LENGTH = 120;
 const MAX_URL_LENGTH = 500;
+export const RESOURCE_HANDOFF_CONTRACT = 'transfer_resources_v1';
 
 const BRAIN_DEMO_CONTEXT = {
   condition: 'brain_lesion_demo',
@@ -135,6 +136,9 @@ export function buildGoldenTimeUrl(options: GoldenTimeUrlOptions): string {
     params.set('condition', primaryCondition);
   }
   if (secondaryConditions) params.set('secondaryConditions', secondaryConditions);
+  if (capabilities.size > 0 || specialties.size > 0) {
+    params.set('resourceContract', RESOURCE_HANDOFF_CONTRACT);
+  }
   if (capabilities.size > 0) params.set('capabilities', Array.from(capabilities).join(','));
   if (specialties.size > 0) params.set('specialties', Array.from(specialties).join(','));
 
