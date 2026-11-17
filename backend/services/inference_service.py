@@ -15,6 +15,7 @@ being presented as clinical lesion detection.
 from __future__ import annotations
 
 import os
+import math
 from typing import Any, Tuple
 
 import nibabel as nib
@@ -100,11 +101,21 @@ class MedicalInferenceService:
             raise _vision_model_mode_error()
 
         img = nib.load(nifti_path)
-        data = img.get_fdata()
-        if data.ndim != 3:
+        # Inspect only the bounded header. get_fdata() would decompress and cast
+        # attacker-selected dimensions before any limit could be enforced.
+        shape = tuple(int(size) for size in img.shape)
+        if len(shape) != 3 or any(size <= 0 for size in shape):
             raise ValueError("Vision input must resolve to a 3D volume.")
+        voxels = math.prod(shape)
+        dtype = np.dtype(img.get_data_dtype())
+        if dtype.hasobject or not np.issubdtype(dtype, np.number):
+            raise ValueError("Medical volume dtype is not supported.")
+        if voxels > 256 ** 3 or voxels * max(dtype.itemsize, 8) > 128 * 1024 ** 2:
+            raise ValueError("Medical volume dimensions exceed the allowed limit.")
 
-        final_mask = self.generate_demo_mask(data.shape)
+        # Demo masks depend on shape alone. Never materialize unused voxel data,
+        # even for valid compressed files (including malicious compression ratios).
+        final_mask = self.generate_demo_mask(shape)
         heatmap = final_mask
         return final_mask, heatmap
 

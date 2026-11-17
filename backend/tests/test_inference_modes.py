@@ -43,6 +43,11 @@ def test_demo_mode_no_torch_import(monkeypatch):
                 import numpy as np
 
                 class MockImg:
+                    shape = (10, 10, 10)
+
+                    def get_data_dtype(self):
+                        return np.dtype("float32")
+
                     def get_fdata(self):
                         return np.zeros((10, 10, 10))
 
