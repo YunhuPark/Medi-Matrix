@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
+// Keep in sync with the Supabase Email minimum; never apply it to existing-password sign-in.
+const MIN_SIGNUP_PASSWORD_LENGTH = 15;
+
 export const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -10,8 +13,12 @@ export const AuthPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setMessage('');
+    if (!isLogin && Array.from(password).length < MIN_SIGNUP_PASSWORD_LENGTH) {
+      setMessage('비밀번호는 15자 이상 입력해 주세요.');
+      return;
+    }
+    setLoading(true);
 
     try {
       if (isLogin) {
@@ -58,8 +65,17 @@ export const AuthPage: React.FC = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            minLength={isLogin ? undefined : MIN_SIGNUP_PASSWORD_LENGTH}
+            autoComplete={isLogin ? 'current-password' : 'new-password'}
+            aria-describedby={isLogin ? undefined : 'medi-signup-password-guidance'}
             style={{ padding: '0.75rem', borderRadius: '4px', border: '1px solid #d1d5db', outline: 'none' }}
           />
+
+          {!isLogin && (
+            <p id="medi-signup-password-guidance" style={{ margin: 0, fontSize: '13px', color: '#4b5563' }}>
+              15자 이상으로 입력해 주세요. 공백을 포함한 긴 문장도 사용할 수 있습니다.
+            </p>
+          )}
           
           <button 
             type="submit" 
@@ -71,7 +87,7 @@ export const AuthPage: React.FC = () => {
         </form>
 
         {message && (
-          <p style={{ marginTop: '1rem', textAlign: 'center', color: message.includes('성공') ? 'green' : 'red', fontSize: '0.875rem' }}>
+          <p role="status" style={{ marginTop: '1rem', textAlign: 'center', color: message.includes('성공') ? 'green' : 'red', fontSize: '0.875rem' }}>
             {message}
           </p>
         )}
