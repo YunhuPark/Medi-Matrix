@@ -5,6 +5,7 @@ import math
 import os
 import uvicorn
 from dotenv import load_dotenv
+from core.body_limit import RequestBodyLimitMiddleware
 from api.router import router as medical_router
 from api.case_router import case_router
 from api.demo_router import demo_router
@@ -16,6 +17,7 @@ from core.cors_policy import (
 load_dotenv()
 
 app = FastAPI(title="Medical Image 3D Viewer API")
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 @app.on_event("startup")
