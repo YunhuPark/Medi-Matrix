@@ -1,10 +1,30 @@
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import uvicorn
-from datetime import datetime
-import json
+from ipaddress import ip_address
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import JSONResponse
 
 app = FastAPI(title="Triage Mock Server")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"], www_redirect=False)
+
+
+@app.middleware("http")
+async def require_direct_loopback(request: Request, call_next):
+    """This unauthenticated simulator is only for direct local backend calls."""
+    try:
+        local_peer = request.client is not None and ip_address(request.client.host).is_loopback
+    except ValueError:
+        local_peer = False
+    if not local_peer or any(
+        name == "forwarded" or name == "x-real-ip" or name.startswith("x-forwarded-")
+        for name in request.headers
+    ):
+        return JSONResponse({"detail": "Direct loopback access only."}, status_code=403)
+    origin = request.headers.get("origin")
+    if origin is not None and origin != f"{request.url.scheme}://{request.headers.get('host', '')}":
+        return JSONResponse({"detail": "Cross-origin requests are not allowed."}, status_code=403)
+    return await call_next(request)
 
 class WebhookPayload(BaseModel):
     patient_id: str
@@ -17,7 +37,6 @@ def print_alert(message: str, color_code: str):
     """
     print(f"\033[{color_code}m{message}\033[0m")
 
-import random
 import hashlib
 
 def simulate_mamba_inference(patient_id: str) -> float:
@@ -45,36 +64,11 @@ def determine_multimodal_triage(volume: float, sepsis_prob: float) -> tuple[str,
 
 @app.post("/api/triage/webhook")
 async def receive_triage_data(payload: WebhookPayload):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # 구분선
-    print("\n" + "="*60)
-    print(f"[{now}] [NEW WEBHOOK RECEIVED]")
-    print("="*60)
-    
-    print(f"> 환자 ID: \033[96m{payload.patient_id}\033[0m")
-    print(f"> 촬영 부위(Modality): {payload.modality}")
-    print(f"> 병변 부피(Volume): {payload.lesion_volume:,.2f} voxels")
-    
-    # [Multi-modal] 1. IMST-Mamba 시계열 패혈증 확률 추론
-    print("...")
-    print_alert("> [IMST-Mamba] 환자 Vitals EMR 데이터 조회 및 상태 공간 모델(SSM) 추론 중...", "90")
+    # Keep the synthetic response contract without logging request medical fields
+    # or patient-derived inference values. This does not query real EMR records.
     sepsis_prob = simulate_mamba_inference(payload.patient_id)
-    print(f"> 패혈증 발병 확률(Sepsis): \033[95m{sepsis_prob}%\033[0m")
-    
-    # [Multi-modal] 2. 융합 응급도 산출
-    level, color = determine_multimodal_triage(payload.lesion_volume, sepsis_prob)
-    
-    # 3. 결과 로깅
-    print("-" * 60)
-    print_alert(f">>> [멀티모달 통합 결과] 산출 응급도: {level} <<<", color)
-    if "RED" in level:
-        print_alert("  [경고] 즉각적인 처치가 필요합니다. 최우선 병상 배정을 실시합니다.", "91")
-    elif level == "YELLOW":
-        print_alert("  [주의] 주의 깊은 모니터링이 필요합니다. 정밀 검사를 준비하세요.", "93")
-    else:
-        print_alert("  [안내] 정상 범위 또는 경미한 수준입니다. 일반 대기열로 안내합니다.", "92")
-    print("="*60 + "\n")
+    level, _ = determine_multimodal_triage(payload.lesion_volume, sepsis_prob)
+    print("[Triage Mock] Synthetic demo request processed.")
     
     return {
         "status": "success",
@@ -84,5 +78,5 @@ async def receive_triage_data(payload: WebhookPayload):
     }
 
 if __name__ == "__main__":
-    print_alert("[Starting] Triage Mock Server on port 8001...", "96")
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    print_alert("[Starting] Local-only Triage Mock Server on 127.0.0.1:8001...", "96")
+    uvicorn.run(app, host="127.0.0.1", port=8001, reload=False, proxy_headers=False)
