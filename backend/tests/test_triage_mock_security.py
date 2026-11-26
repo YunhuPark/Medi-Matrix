@@ -41,20 +41,26 @@ def test_local_backend_call_retains_deterministic_contract(peer):
 
 
 def test_dns_rebinding_host_is_rejected():
-    response = client_for(base_url="http://attacker.invalid:8001").post("/api/triage/webhook", json=PAYLOAD)
+    with patch.object(mock_server, "simulate_mamba_inference") as inference:
+        response = client_for(base_url="http://attacker.invalid:8001").post("/api/triage/webhook", json=PAYLOAD)
     assert response.status_code == 400
+    inference.assert_not_called()
 
 
-@pytest.mark.parametrize("header", ["Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"])
+@pytest.mark.parametrize("header", ["Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "X-Forwarded-Untrusted"])
 def test_forwarded_ingress_is_rejected(header):
-    response = client_for().post("/api/triage/webhook", json=PAYLOAD, headers={header: "127.0.0.1"})
+    with patch.object(mock_server, "simulate_mamba_inference") as inference:
+        response = client_for().post("/api/triage/webhook", json=PAYLOAD, headers={header: "127.0.0.1"})
     assert response.status_code == 403
+    inference.assert_not_called()
 
 
 @pytest.mark.parametrize("origin", ["https://attacker.invalid", "null", "http://localhost:5173"])
 def test_cross_origin_browser_request_is_rejected(origin):
-    response = client_for().post("/api/triage/webhook", json=PAYLOAD, headers={"Origin": origin})
+    with patch.object(mock_server, "simulate_mamba_inference") as inference:
+        response = client_for().post("/api/triage/webhook", json=PAYLOAD, headers={"Origin": origin})
     assert response.status_code == 403
+    inference.assert_not_called()
 
 
 def test_same_origin_documentation_request_is_supported():
@@ -69,6 +75,8 @@ def test_request_fields_not_written_to_console(capsys):
     assert PAYLOAD["patient_id"] not in output.out + output.err
     assert PAYLOAD["modality"] not in output.out + output.err
     assert "12,345.67" not in output.out + output.err
+    assert output.out == "[Triage Mock] Synthetic demo request processed.\n"
+    assert output.err == ""
 
 
 def test_launcher_is_loopback_only_without_reload_or_proxy_trust(monkeypatch):
