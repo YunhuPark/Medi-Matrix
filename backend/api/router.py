@@ -20,6 +20,7 @@ from services.mesh_processor import create_mesh_from_mask
 from services.supabase_client import upload_file_to_supabase, get_supabase_client
 from services.mamba_service import mamba_simulator
 from core.auth import get_current_user, CurrentUser, decode_verified_token_exp
+from core.triage_egress import local_triage_destination
 from core.rate_limit import check_rate_limit, process_mri_limiter, upload_vitals_limiter, triage_send_limiter, signed_url_limiter, websocket_limiter
 
 router = APIRouter()
@@ -55,7 +56,10 @@ async def trigger_triage_webhook(
     On-Demand로 Triage 외부 서버에 웹훅을 전송합니다. (구버전 - 하위 호환 유지)
     """
     check_rate_limit(request, triage_send_limiter, current_user.user_id)
-    triage_api_url = os.environ.get("TRIAGE_API_URL", "http://localhost:8001/api/triage/webhook")
+    try:
+        triage_api_url = local_triage_destination(os.environ.get("TRIAGE_API_URL"))
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Triage destination is not an approved local simulator.")
 
     payload = {
         "patient_id": req.patient_id,
@@ -64,9 +68,9 @@ async def trigger_triage_webhook(
     }
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
             response = await client.post(triage_api_url, json=payload, timeout=5.0)
-            if response.status_code >= 400:
+            if not 200 <= response.status_code < 300:
                 raise HTTPException(status_code=502, detail="Triage server error")
 
             # Triage 서버의 응답(sepsis_probability 등)을 그대로 프론트에 전달
