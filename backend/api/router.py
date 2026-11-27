@@ -21,6 +21,7 @@ from services.supabase_client import upload_file_to_supabase, get_supabase_clien
 from services.mamba_service import mamba_simulator
 from core.auth import get_current_user, CurrentUser, decode_verified_token_exp
 from core.triage_egress import local_triage_destination
+from core.npy_budget import MAX_NPY_HEADER_BYTES, NpyHeaderError, validate_npy_budget
 from core.rate_limit import check_rate_limit, process_mri_limiter, upload_vitals_limiter, triage_send_limiter, signed_url_limiter, websocket_limiter
 
 router = APIRouter()
@@ -474,7 +475,8 @@ async def process_medical_mri(
             else:
                 # 호환성을 위해 기존 .npy 지원 유지 (이미 마스크인 경우)
 
-                mask_data = np.load(io.BytesIO(contents), allow_pickle=False)
+                validate_npy_budget(contents)
+                mask_data = np.load(io.BytesIO(contents), allow_pickle=False, max_header_size=MAX_NPY_HEADER_BYTES)
 
                 if mask_data.dtype.hasobject:
                     raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
@@ -554,6 +556,8 @@ async def process_medical_mri(
 
     except HTTPException:
         raise
+    except NpyHeaderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid NumPy medical data.")
     except Exception:
